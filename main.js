@@ -302,8 +302,23 @@ class TranscriptProcessModal extends Modal {
   }
 
   renderHistoryEntry(parentEl, entry) {
-    const cardEl = parentEl.createDiv({ cls: `transcript-gui-history-card ${entry.status === "failed" ? "is-error" : "is-success"}` });
-    cardEl.createEl("div", { cls: "transcript-gui-history-title", text: entry.theme || "Unbenannter Lauf" });
+    const isFailed = entry.status === "failed";
+    const cardEl = parentEl.createDiv({ cls: `transcript-gui-history-card ${isFailed ? "is-error" : "is-success"}` });
+
+    const cardHeaderEl = cardEl.createDiv({ cls: "transcript-gui-history-header" });
+    cardHeaderEl.createEl("div", { cls: "transcript-gui-history-title", text: entry.theme || "Unbenannter Lauf" });
+
+    if (isFailed) {
+      const deleteBtn = cardHeaderEl.createEl("button", { cls: "transcript-gui-history-delete", attr: { "aria-label": "Eintrag loeschen", title: "Eintrag loeschen" } });
+      deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>`;
+      deleteBtn.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        await this.plugin.deleteHistoryEntry(entry.timestamp);
+        this.onOpen();
+      });
+    }
+
     const metaEl = cardEl.createDiv({ cls: "transcript-gui-history-meta" });
     metaEl.createSpan({ text: entry.status || "unbekannt" });
     if (entry.course) {
@@ -758,6 +773,16 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
     await this.saveSettings();
   }
 
+  async deleteHistoryEntry(timestamp) {
+    const history = Array.isArray(this.settings.jobHistory) ? this.settings.jobHistory : [];
+    this.settings.jobHistory = history.filter((entry) => entry.timestamp !== timestamp);
+    // Also clear lastRun if it matches the deleted entry.
+    if (this.settings.lastRun?.timestamp === timestamp) {
+      this.settings.lastRun = this.settings.jobHistory[0] || null;
+    }
+    await this.saveSettings();
+  }
+
   openProcessModal(initialAudioPath = "") {
     new TranscriptProcessModal(this.app, this, initialAudioPath).open();
   }
@@ -948,11 +973,26 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
   async startBackendProcess() {
     const projectDir = this.resolveBackendProjectDir();
     const command = this.settings.backendStartCommand?.trim() || DEFAULT_SETTINGS.backendStartCommand;
+
+    // macOS GUI apps inherit a minimal PATH that omits Homebrew (/opt/homebrew/bin).
+    // We inject the most common install locations so ffmpeg, python, etc. are found.
+    const extraPaths = [
+      "/opt/homebrew/bin",
+      "/opt/homebrew/sbin",
+      "/usr/local/bin",
+      "/opt/local/bin",
+    ];
+    const basePath = process.env.PATH || "";
+    const patchedPath = [...new Set([...extraPaths, ...basePath.split(":")])
+      .filter(Boolean)]
+      .join(":");
+
     const child = spawn(command, {
       cwd: projectDir,
       shell: true,
       detached: true,
       stdio: "ignore",
+      env: { ...process.env, PATH: patchedPath },
     });
     child.unref();
     this.lastBackendPid = child.pid;
