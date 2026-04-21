@@ -1,0 +1,18 @@
+{
+  "backendUrl": "http://127.0.0.1:8765",
+  "autoStartBackend": true,
+  "backendProjectDir": "40_Projekte/obsidian-lecture-pipeline",
+  "backendStartCommand": ".venv/bin/lecture-pipeline serve --host 127.0.0.1 --port 8765",
+  "backendHealthTimeoutMs": 30000,
+  "inboxFolder": "99_Inbox/Audio",
+  "defaultSessionType": "Vorlesung",
+  "openNoteAfterProcessing": true,
+  "lastRun": null,
+  "jobHistory": [],
+  "courseOptions": [
+    "Oekonometrie",
+    "Quantitative_Projekte_und_Reihenfolgenplanung",
+    "Humanisierung_der_Arbeitswelt",
+    "Dienstleistungsproduktion"
+  ]
+}
