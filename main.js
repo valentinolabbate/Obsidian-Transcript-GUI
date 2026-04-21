@@ -10,12 +10,20 @@ const {
   requestUrl,
   normalizePath,
 } = require("obsidian");
-const { spawn } = require("child_process");
+const { spawn, exec } = require("child_process");
 const path = require("path");
+const fs = require("fs");
+const os = require("os");
+const https = require("https");
 
 const AUDIO_EXTENSIONS = new Set(["mp3", "m4a", "wav", "ogg", "flac", "aac", "aiff"]);
 const VIDEO_EXTENSIONS = new Set(["mp4", "webm", "mov", "mkv", "avi", "m4v"]);
 const MEDIA_EXTENSIONS = new Set([...AUDIO_EXTENSIONS, ...VIDEO_EXTENSIONS]);
+
+const BACKEND_REPO_OWNER = "valentinolabbate";
+const BACKEND_REPO_NAME = "Obsidian-Transcript-Server";
+const BACKEND_BRANCH = "main";
+const BACKEND_DOWNLOAD_URL = `https://github.com/${BACKEND_REPO_OWNER}/${BACKEND_REPO_NAME}/archive/refs/heads/${BACKEND_BRANCH}.tar.gz`;
 
 const DEFAULT_SESSION_PROFILES = [
   {
@@ -40,10 +48,10 @@ const DEFAULT_SESSION_PROFILES = [
 
 const DEFAULT_SETTINGS = {
   backendUrl: "http://127.0.0.1:8765",
-  autoStartBackend: true,
-  backendProjectDir: "40_Projekte/obsidian-lecture-pipeline",
-  backendStartCommand: ".venv/bin/lecture-pipeline serve --host 127.0.0.1 --port 8765",
-  backendHealthTimeoutMs: 30000,
+  backendAutoInstall: true,
+  backendAutoUpdate: true,
+  backendInstallDir: "",
+  backendVersion: "",
   inboxFolder: "99_Inbox/Audio",
   defaultSessionType: "Vorlesung",
   openNoteAfterProcessing: true,
@@ -127,6 +135,84 @@ function parseTranscriptStem(fileName) {
     theme: parts.slice(2).join(" – "),
   };
 }
+
+// ── Backend Installer Helpers ───────────────────────────────────────────────
+
+function getDefaultBackendInstallDir() {
+  const home = os.homedir();
+  if (process.platform === "win32") {
+    return path.join(home, "AppData", "Roaming", "obsidian-transcript-server");
+  }
+  return path.join(home, ".config", "obsidian-transcript-server");
+}
+
+function getBackendInstallDir(settings) {
+  const configured = settings.backendInstallDir?.trim();
+  if (configured) {
+    if (path.isAbsolute(configured)) {
+      return configured;
+    }
+    return path.join(os.homedir(), configured);
+  }
+  return getDefaultBackendInstallDir();
+}
+
+function isBackendInstalled(settings) {
+  const installDir = getBackendInstallDir(settings);
+  const executable = path.join(installDir, ".venv", "bin", "lecture-pipeline");
+  try {
+    fs.accessSync(executable, fs.constants.X_OK);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function getBackendExecutablePath(settings) {
+  const installDir = getBackendInstallDir(settings);
+  return path.join(installDir, ".venv", "bin", "lecture-pipeline");
+}
+
+function execPromise(command, options = {}) {
+  return new Promise((resolve, reject) => {
+    exec(command, options, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr || stdout || error.message));
+      } else {
+        resolve({ stdout, stderr });
+      }
+    });
+  });
+}
+
+function downloadFile(url, destPath) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(destPath);
+    https.get(url, { headers: { "User-Agent": "obsidian-transcript-gui" } }, (response) => {
+      if (response.statusCode === 301 || response.statusCode === 302) {
+        return downloadFile(response.headers.location, destPath).then(resolve).catch(reject);
+      }
+      if (response.statusCode !== 200) {
+        reject(new Error(`Download failed: ${response.statusCode}`));
+        return;
+      }
+      response.pipe(file);
+      file.on("finish", () => {
+        file.close();
+        resolve();
+      });
+    }).on("error", (error) => {
+      fs.unlink(destPath, () => {});
+      reject(error);
+    });
+  });
+}
+
+async function extractTarGz(tarPath, destDir) {
+  await execPromise(`tar -xzf "${tarPath}" -C "${destDir}"`);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 
 class AudioFileSuggestModal extends FuzzySuggestModal {
   constructor(app, files, onChoose) {
@@ -1035,51 +1121,57 @@ class TranscriptGuiSettingTab extends PluginSettingTab {
         });
       });
 
+    const installed = isBackendInstalled(this.plugin.settings);
+    const installDir = getBackendInstallDir(this.plugin.settings);
+
+    containerEl.createEl("h3", { text: "Backend" });
+    containerEl.createEl("p", {
+      text: installed
+        ? `Installiert: ${installDir} (Version ${this.plugin.settings.backendVersion || "unbekannt"})`
+        : "Noch nicht installiert. Das Backend wird außerhalb des Vaults verwaltet.",
+    });
+
     new Setting(containerEl)
-      .setName("Backend automatisch starten")
-      .setDesc("Startet den lokalen Server automatisch, wenn er nicht erreichbar ist.")
+      .setName("Backend automatisch installieren")
+      .setDesc("Fragt beim Start nach, wenn das Backend fehlt.")
       .addToggle((toggle) => {
-        toggle.setValue(this.plugin.settings.autoStartBackend);
+        toggle.setValue(this.plugin.settings.backendAutoInstall);
         toggle.onChange(async (value) => {
-          this.plugin.settings.autoStartBackend = value;
+          this.plugin.settings.backendAutoInstall = value;
           await this.plugin.saveSettings();
         });
       });
 
     new Setting(containerEl)
-      .setName("Backend-Projektordner")
-      .setDesc("Relativ zum Vault oder absolut. Von hier wird der Server automatisch gestartet.")
-      .addText((text) => {
-        text.setPlaceholder("40_Projekte/obsidian-lecture-pipeline");
-        text.setValue(this.plugin.settings.backendProjectDir);
-        text.onChange(async (value) => {
-          this.plugin.settings.backendProjectDir = value.trim() || DEFAULT_SETTINGS.backendProjectDir;
+      .setName("Backend automatisch aktualisieren")
+      .setDesc("Prüft beim Start auf Updates und fragt nach.")
+      .addToggle((toggle) => {
+        toggle.setValue(this.plugin.settings.backendAutoUpdate);
+        toggle.onChange(async (value) => {
+          this.plugin.settings.backendAutoUpdate = value;
           await this.plugin.saveSettings();
         });
       });
 
     new Setting(containerEl)
-      .setName("Backend-Startkommando")
-      .setDesc("Wird lokal im Projektordner ausgefuehrt, falls das Backend nicht laeuft.")
-      .addText((text) => {
-        text.setPlaceholder(DEFAULT_SETTINGS.backendStartCommand);
-        text.setValue(this.plugin.settings.backendStartCommand);
-        text.onChange(async (value) => {
-          this.plugin.settings.backendStartCommand = value.trim() || DEFAULT_SETTINGS.backendStartCommand;
-          await this.plugin.saveSettings();
+      .setName("Installation verwalten")
+      .addButton((button) => {
+        button.setButtonText(installed ? "Jetzt aktualisieren" : "Jetzt installieren");
+        button.setCta();
+        button.onClick(async () => {
+          if (installed) {
+            await this.plugin.uninstallBackend();
+          }
+          await this.plugin.installBackend();
+          this.display();
         });
-      });
-
-    new Setting(containerEl)
-      .setName("Backend-Start-Timeout")
-      .setDesc("Wie lange die GUI auf den automatischen Start warten soll.")
-      .addText((text) => {
-        text.setPlaceholder("30000");
-        text.setValue(String(this.plugin.settings.backendHealthTimeoutMs));
-        text.onChange(async (value) => {
-          const parsed = Number(value.trim());
-          this.plugin.settings.backendHealthTimeoutMs = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SETTINGS.backendHealthTimeoutMs;
-          await this.plugin.saveSettings();
+      })
+      .addButton((button) => {
+        button.setButtonText("Deinstallieren");
+        button.setDisabled(!installed);
+        button.onClick(async () => {
+          await this.plugin.uninstallBackend();
+          this.display();
         });
       });
 
@@ -1239,6 +1331,13 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
     await this.loadSettings();
     this.backendStartPromise = null;
     this.lastBackendPid = null;
+
+    // Auto-install / auto-update backend (non-blocking)
+    if (this.settings.backendAutoInstall) {
+      window.setTimeout(() => {
+        void this.handleBackendLifecycle();
+      }, 1200);
+    }
 
     this.addRibbonIcon("audio-file", "Transcript GUI", () => this.openProcessModal());
 
@@ -1653,12 +1752,145 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
     await this.openVaultPathFromAbsolutePath(absolutePath);
   }
 
+  // ── Backend Lifecycle ────────────────────────────────────────────────────
+
+  async handleBackendLifecycle() {
+    const installed = isBackendInstalled(this.settings);
+    if (!installed) {
+      await this.promptInstallBackend();
+      return;
+    }
+    if (this.settings.backendAutoUpdate) {
+      await this.promptUpdateBackendIfNeeded();
+    }
+  }
+
+  async promptInstallBackend() {
+    const modal = new Modal(this.app);
+    modal.titleEl.setText("Backend Installation");
+    const content = modal.contentEl;
+    content.createEl("p", {
+      text: "Das Obsidian-Transcript-Server-Backend wurde noch nicht installiert. Es wird außerhalb des Vaults unter ~/.config/obsidian-transcript-server eingerichtet.",
+    });
+    const actions = content.createDiv({ cls: "transcript-gui-inline-actions" });
+    const installBtn = actions.createEl("button", { text: "Jetzt installieren", cls: "mod-cta" });
+    const skipBtn = actions.createEl("button", { text: "Später" });
+
+    installBtn.addEventListener("click", async () => {
+      modal.close();
+      await this.installBackend();
+    });
+    skipBtn.addEventListener("click", () => {
+      modal.close();
+    });
+    modal.open();
+  }
+
+  async installBackend() {
+    const installDir = getBackendInstallDir(this.settings);
+    const notice = new Notice("Backend wird heruntergeladen und installiert...", 0);
+
+    try {
+      fs.mkdirSync(installDir, { recursive: true });
+
+      const tarPath = path.join(installDir, "backend.tar.gz");
+      await downloadFile(BACKEND_DOWNLOAD_URL, tarPath);
+
+      notice.setMessage("Backend wird entpackt...");
+      await extractTarGz(tarPath, installDir);
+
+      // Find extracted folder (usually Obsidian-Transcript-Server-main)
+      const extracted = fs.readdirSync(installDir).find((d) => d.startsWith("Obsidian-Transcript-Server"));
+      if (!extracted) {
+        throw new Error("Entpacktes Backend-Verzeichnis nicht gefunden.");
+      }
+      const sourceDir = path.join(installDir, extracted);
+
+      notice.setMessage("Python-Umgebung wird erstellt...");
+      await execPromise(`python3 -m venv "${path.join(installDir, ".venv")}"`, { cwd: installDir });
+
+      notice.setMessage("Backend-Abhängigkeiten werden installiert (das kann einige Minuten dauern)...");
+      const pip = path.join(installDir, ".venv", "bin", "pip");
+      await execPromise(`"${pip}" install -e "${sourceDir}"`, { cwd: installDir });
+
+      // Optional audio dependencies
+      try {
+        await execPromise(`"${pip}" install -e "${sourceDir}[audio]"`, { cwd: installDir });
+      } catch (_error) {
+        // Audio dependencies are optional; log silently
+      }
+
+      // Cleanup
+      fs.unlinkSync(tarPath);
+      fs.rmSync(sourceDir, { recursive: true, force: true });
+
+      this.settings.backendVersion = "0.1.0";
+      this.settings.backendInstallDir = installDir;
+      await this.saveSettings();
+
+      notice.hide();
+      new Notice("Backend erfolgreich installiert.", 4000);
+    } catch (error) {
+      notice.hide();
+      new Notice(`Backend-Installation fehlgeschlagen: ${error.message}`, 8000);
+      throw error;
+    }
+  }
+
+  async uninstallBackend() {
+    const installDir = getBackendInstallDir(this.settings);
+    try {
+      fs.rmSync(installDir, { recursive: true, force: true });
+      this.settings.backendVersion = "";
+      await this.saveSettings();
+      new Notice("Backend deinstalliert.", 4000);
+    } catch (error) {
+      new Notice(`Deinstallation fehlgeschlagen: ${error.message}`, 6000);
+    }
+  }
+
+  async checkBackendUpdateAvailable() {
+    // For now, we compare against a hardcoded remote version.
+    // In the future this could fetch package.json or a VERSION file from the repo.
+    const remoteVersion = "0.1.0";
+    return this.settings.backendVersion !== remoteVersion;
+  }
+
+  async promptUpdateBackendIfNeeded() {
+    const available = await this.checkBackendUpdateAvailable();
+    if (!available) {
+      return;
+    }
+    const modal = new Modal(this.app);
+    modal.titleEl.setText("Backend-Update verfügbar");
+    modal.contentEl.createEl("p", { text: "Eine neue Version des Backends ist verfügbar. Möchtest du jetzt aktualisieren?" });
+    const actions = modal.contentEl.createDiv({ cls: "transcript-gui-inline-actions" });
+    const updateBtn = actions.createEl("button", { text: "Aktualisieren", cls: "mod-cta" });
+    const skipBtn = actions.createEl("button", { text: "Später" });
+
+    updateBtn.addEventListener("click", async () => {
+      modal.close();
+      await this.uninstallBackend();
+      await this.installBackend();
+    });
+    skipBtn.addEventListener("click", () => {
+      modal.close();
+    });
+    modal.open();
+  }
+
+  getBackendExecutablePath() {
+    return getBackendExecutablePath(this.settings);
+  }
+
+  // ── Backend Communication ────────────────────────────────────────────────
+
   async ensureBackendAvailable(options = {}) {
     const { forceStart = false } = options;
     try {
       return await this.fetchBackendHealth();
     } catch (error) {
-      if (!this.settings.autoStartBackend && !forceStart) {
+      if (!forceStart) {
         throw error;
       }
     }
@@ -1680,24 +1912,11 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
     return response.json;
   }
 
-  resolveBackendProjectDir() {
-    const configured = this.settings.backendProjectDir?.trim() || DEFAULT_SETTINGS.backendProjectDir;
-    if (configured.startsWith("/") || /^[A-Za-z]:[\\/]/.test(configured)) {
-      return configured;
-    }
-    const adapter = this.app.vault.adapter;
-    if (!(adapter instanceof FileSystemAdapter)) {
-      throw new Error("Dateisystem-Adapter fuer Backend-Autostart nicht verfuegbar.");
-    }
-    return path.join(adapter.getBasePath(), configured);
-  }
-
   async startBackendProcess() {
-    const projectDir = this.resolveBackendProjectDir();
-    const command = this.settings.backendStartCommand?.trim() || DEFAULT_SETTINGS.backendStartCommand;
+    const installDir = getBackendInstallDir(this.settings);
+    const executable = this.getBackendExecutablePath();
+    const command = `"${executable}" serve --host 127.0.0.1 --port 8765`;
 
-    // macOS GUI apps inherit a minimal PATH that omits Homebrew (/opt/homebrew/bin).
-    // We inject the most common install locations so ffmpeg, python, etc. are found.
     const extraPaths = [
       "/opt/homebrew/bin",
       "/opt/homebrew/sbin",
@@ -1710,7 +1929,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
       .join(":");
 
     const child = spawn(command, {
-      cwd: projectDir,
+      cwd: installDir,
       shell: true,
       detached: true,
       stdio: "ignore",
@@ -1719,7 +1938,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
     child.unref();
     this.lastBackendPid = child.pid;
 
-    const timeoutMs = Number(this.settings.backendHealthTimeoutMs || DEFAULT_SETTINGS.backendHealthTimeoutMs);
+    const timeoutMs = 30000;
     const startedAt = Date.now();
     while (Date.now() - startedAt < timeoutMs) {
       await new Promise((resolve) => window.setTimeout(resolve, 750));
