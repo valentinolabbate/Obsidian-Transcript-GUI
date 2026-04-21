@@ -206,6 +206,9 @@ class TranscriptProcessModal extends Modal {
 
   onOpen() {
     this.modalEl.addClass("transcript-gui-modal-host");
+    this.modalEl.style.width = "min(1380px, calc(100vw - 2rem))";
+    this.modalEl.style.maxWidth = "1380px";
+    this.modalEl.style.maxHeight = "calc(100vh - 2rem)";
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("transcript-gui-modal");
@@ -520,6 +523,9 @@ class TranscriptProcessModal extends Modal {
   onClose() {
     this.pollToken += 1;
     this.modalEl.removeClass("transcript-gui-modal-host");
+    this.modalEl.style.removeProperty("width");
+    this.modalEl.style.removeProperty("max-width");
+    this.modalEl.style.removeProperty("max-height");
     this.contentEl.empty();
   }
 

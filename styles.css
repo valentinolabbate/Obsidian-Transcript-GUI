@@ -9,7 +9,7 @@
   --transcript-gui-border: color-mix(in srgb, var(--background-modifier-border) 84%, transparent);
 }
 
-.transcript-gui-modal-host .modal {
+.transcript-gui-modal-host {
   width: min(1380px, calc(100vw - 2rem));
   max-width: 1380px;
   max-height: calc(100vh - 2rem);
@@ -513,7 +513,7 @@
 }
 
 @media (max-width: 1260px) {
-  .transcript-gui-modal-host .modal {
+  .transcript-gui-modal-host {
     width: min(1180px, calc(100vw - 1.5rem));
   }
 
@@ -523,7 +523,7 @@
 }
 
 @media (max-width: 980px) {
-  .transcript-gui-modal-host .modal {
+  .transcript-gui-modal-host {
     width: min(100vw - 1rem, 920px);
   }
 
