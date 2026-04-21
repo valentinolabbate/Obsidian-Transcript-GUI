@@ -983,8 +983,8 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
       "/opt/local/bin",
     ];
     const basePath = process.env.PATH || "";
-    const patchedPath = [...new Set([...extraPaths, ...basePath.split(":")])
-      .filter(Boolean)]
+    const patchedPath = [...new Set([...extraPaths, ...basePath.split(":")])]
+      .filter(Boolean)
       .join(":");
 
     const child = spawn(command, {
