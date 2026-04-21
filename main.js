@@ -76,6 +76,11 @@ const DEFAULT_PROMPT_PROFILES = [
   },
 ];
 
+const SPEAKER_LABEL_MODE_OPTIONS = [
+  { value: "professor", label: "Speaker 1 = Prof" },
+  { value: "generic", label: "Speaker 1, 2, 3..." },
+];
+
 const DEFAULT_SETTINGS = {
   backendUrl: "http://127.0.0.1:8765",
   backendAutoInstall: true,
@@ -84,6 +89,7 @@ const DEFAULT_SETTINGS = {
   inboxFolder: "99_Inbox/Audio",
   defaultSessionType: "Vorlesung",
   defaultPromptProfile: "vorlesung",
+  defaultSpeakerLabelMode: "professor",
   openNoteAfterProcessing: true,
   lastRun: null,
   jobHistory: [],
@@ -130,8 +136,13 @@ function normalizeSessionProfiles(profiles) {
   return normalized.length > 0 ? normalized : fallback;
 }
 
+function normalizeSpeakerLabelMode(value) {
+  return value === "generic" ? "generic" : "professor";
+}
+
 function normalizeSettings(data) {
   const settings = Object.assign({}, DEFAULT_SETTINGS, data || {});
+  settings.defaultSpeakerLabelMode = normalizeSpeakerLabelMode(data?.defaultSpeakerLabelMode || settings.defaultSpeakerLabelMode);
   settings.sessionProfiles = normalizeSessionProfiles(data?.sessionProfiles);
   if (!settings.sessionProfiles.some((profile) => profile.name === settings.defaultSessionType)) {
     settings.defaultSessionType = settings.sessionProfiles[0].name;
@@ -447,6 +458,7 @@ class TranscriptProcessModal extends Modal {
       date: window.moment ? window.moment().format("YYYY-MM-DD") : new Date().toISOString().slice(0, 10),
       sessionType: plugin.getSessionProfile(plugin.settings.defaultSessionType)?.name || plugin.getSessionProfiles()[0]?.name || "Vorlesung",
       promptProfile: plugin.settings.defaultPromptProfile || "vorlesung",
+      speakerLabelMode: normalizeSpeakerLabelMode(plugin.settings.defaultSpeakerLabelMode),
       theme: "",
     };
     this.isSubmitting = false;
@@ -614,6 +626,17 @@ class TranscriptProcessModal extends Modal {
     profileSelectEl.value = this.state.promptProfile;
     profileSelectEl.addEventListener("change", (event) => {
       this.state.promptProfile = event.target.value;
+    });
+
+    const speakerModeFieldEl = this.createField(metaGridEl, "Sprecher-Modus");
+    const speakerModeSelectEl = speakerModeFieldEl.createEl("select", { cls: "transcript-gui-select" });
+    SPEAKER_LABEL_MODE_OPTIONS.forEach((option) => {
+      const optionEl = speakerModeSelectEl.createEl("option", { text: option.label, value: option.value });
+      optionEl.value = option.value;
+    });
+    speakerModeSelectEl.value = this.state.speakerLabelMode;
+    speakerModeSelectEl.addEventListener("change", (event) => {
+      this.state.speakerLabelMode = normalizeSpeakerLabelMode(event.target.value);
     });
 
     this.activeJobsSectionEl = this.createSection(formEl, "Aktive Jobs");
@@ -1086,6 +1109,7 @@ class TranscriptProcessModal extends Modal {
       session_type: this.state.sessionType,
       theme: this.state.theme,
       prompt_profile: this.state.promptProfile,
+      speaker_label_mode: normalizeSpeakerLabelMode(this.state.speakerLabelMode),
       template_path: this.plugin.getSessionProfile(this.state.sessionType)?.templatePath || undefined,
       storage_dir: this.plugin.getSessionProfile(this.state.sessionType)?.storageDir || undefined,
       output_dir: this.plugin.getSessionProfile(this.state.sessionType)?.outputDir || undefined,
@@ -1384,6 +1408,18 @@ class TranscriptGuiSettingTab extends PluginSettingTab {
         dropdown.setValue(this.plugin.settings.defaultSessionType);
         dropdown.onChange(async (value) => {
           this.plugin.settings.defaultSessionType = value;
+          await this.plugin.saveSettings();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Standard-Sprecher-Modus")
+      .setDesc("Waehlt zwischen Prof-Markierung fuer Speaker 1 und neutralen Speaker-Nummern.")
+      .addDropdown((dropdown) => {
+        SPEAKER_LABEL_MODE_OPTIONS.forEach((option) => dropdown.addOption(option.value, option.label));
+        dropdown.setValue(normalizeSpeakerLabelMode(this.plugin.settings.defaultSpeakerLabelMode));
+        dropdown.onChange(async (value) => {
+          this.plugin.settings.defaultSpeakerLabelMode = normalizeSpeakerLabelMode(value);
           await this.plugin.saveSettings();
         });
       });
@@ -1697,6 +1733,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
           date: window.moment ? window.moment().format("YYYY-MM-DD") : new Date().toISOString().slice(0, 10),
           session_type: this.settings.defaultSessionType,
           theme: this.suggestThemeFromAudio(latest),
+          speaker_label_mode: normalizeSpeakerLabelMode(this.settings.defaultSpeakerLabelMode),
           template_path: sessionProfile?.templatePath || undefined,
           storage_dir: sessionProfile?.storageDir || undefined,
           output_dir: sessionProfile?.outputDir || undefined,
@@ -2194,7 +2231,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
       fs.unlinkSync(tarPath);
       fs.rmSync(sourceDir, { recursive: true, force: true });
 
-      this.settings.backendVersion = "0.1.0";
+      this.settings.backendVersion = "0.2.1";
       await this.saveSettings();
 
       notice.hide();
@@ -2231,7 +2268,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
   async checkBackendUpdateAvailable() {
     // For now, we compare against a hardcoded remote version.
     // In the future this could fetch package.json or a VERSION file from the repo.
-    const remoteVersion = "0.1.0";
+    const remoteVersion = "0.2.1";
     return this.settings.backendVersion !== remoteVersion;
   }
 
