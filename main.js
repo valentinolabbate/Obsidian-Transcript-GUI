@@ -50,7 +50,6 @@ const DEFAULT_SETTINGS = {
   backendUrl: "http://127.0.0.1:8765",
   backendAutoInstall: true,
   backendAutoUpdate: true,
-  backendInstallDir: "",
   backendVersion: "",
   inboxFolder: "99_Inbox/Audio",
   defaultSessionType: "Vorlesung",
@@ -138,27 +137,24 @@ function parseTranscriptStem(fileName) {
 
 // ── Backend Installer Helpers ───────────────────────────────────────────────
 
-function getDefaultBackendInstallDir() {
-  const home = os.homedir();
-  if (process.platform === "win32") {
-    return path.join(home, "AppData", "Roaming", "obsidian-transcript-server");
+function getPluginDir() {
+  // In Obsidian plugins, this file lives at:
+  // <vault>/.obsidian/plugins/obsidian-transcript-gui/main.js
+  // We derive the plugin dir from __dirname of this module.
+  try {
+    return path.dirname(__filename);
+  } catch (_e) {
+    // Fallback: if __dirname is not available, use a temp path
+    return path.join(os.homedir(), ".obsidian-transcript-server");
   }
-  return path.join(home, ".config", "obsidian-transcript-server");
 }
 
-function getBackendInstallDir(settings) {
-  const configured = settings.backendInstallDir?.trim();
-  if (configured) {
-    if (path.isAbsolute(configured)) {
-      return configured;
-    }
-    return path.join(os.homedir(), configured);
-  }
-  return getDefaultBackendInstallDir();
+function getBackendInstallDir() {
+  return path.join(getPluginDir(), ".backend");
 }
 
-function isBackendInstalled(settings) {
-  const installDir = getBackendInstallDir(settings);
+function isBackendInstalled() {
+  const installDir = getBackendInstallDir();
   const executable = path.join(installDir, ".venv", "bin", "lecture-pipeline");
   try {
     fs.accessSync(executable, fs.constants.X_OK);
@@ -168,9 +164,8 @@ function isBackendInstalled(settings) {
   }
 }
 
-function getBackendExecutablePath(settings) {
-  const installDir = getBackendInstallDir(settings);
-  return path.join(installDir, ".venv", "bin", "lecture-pipeline");
+function getBackendExecutablePath() {
+  return path.join(getBackendInstallDir(), ".venv", "bin", "lecture-pipeline");
 }
 
 function execPromise(command, options = {}) {
@@ -1121,14 +1116,14 @@ class TranscriptGuiSettingTab extends PluginSettingTab {
         });
       });
 
-    const installed = isBackendInstalled(this.plugin.settings);
-    const installDir = getBackendInstallDir(this.plugin.settings);
+    const installed = isBackendInstalled();
+    const installDir = getBackendInstallDir();
 
     containerEl.createEl("h3", { text: "Backend" });
     containerEl.createEl("p", {
       text: installed
-        ? `Installiert: ${installDir} (Version ${this.plugin.settings.backendVersion || "unbekannt"})`
-        : "Noch nicht installiert. Das Backend wird außerhalb des Vaults verwaltet.",
+        ? `Installiert im Plugin-Ordner (Version ${this.plugin.settings.backendVersion || "unbekannt"})`
+        : "Noch nicht installiert. Das Backend wird im Plugin-Ordner verwaltet.",
     });
 
     new Setting(containerEl)
@@ -1755,7 +1750,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
   // ── Backend Lifecycle ────────────────────────────────────────────────────
 
   async handleBackendLifecycle() {
-    const installed = isBackendInstalled(this.settings);
+    const installed = isBackendInstalled();
     if (!installed) {
       await this.promptInstallBackend();
       return;
@@ -1770,7 +1765,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
     modal.titleEl.setText("Backend Installation");
     const content = modal.contentEl;
     content.createEl("p", {
-      text: "Das Obsidian-Transcript-Server-Backend wurde noch nicht installiert. Es wird außerhalb des Vaults unter ~/.config/obsidian-transcript-server eingerichtet.",
+      text: "Das Obsidian-Transcript-Server-Backend wurde noch nicht installiert. Es wird im Plugin-Ordner eingerichtet.",
     });
     const actions = content.createDiv({ cls: "transcript-gui-inline-actions" });
     const installBtn = actions.createEl("button", { text: "Jetzt installieren", cls: "mod-cta" });
@@ -1787,7 +1782,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
   }
 
   async installBackend() {
-    const installDir = getBackendInstallDir(this.settings);
+    const installDir = getBackendInstallDir();
     const notice = new Notice("Backend wird heruntergeladen und installiert...", 0);
 
     try {
@@ -1825,7 +1820,6 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
       fs.rmSync(sourceDir, { recursive: true, force: true });
 
       this.settings.backendVersion = "0.1.0";
-      this.settings.backendInstallDir = installDir;
       await this.saveSettings();
 
       notice.hide();
@@ -1838,7 +1832,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
   }
 
   async uninstallBackend() {
-    const installDir = getBackendInstallDir(this.settings);
+    const installDir = getBackendInstallDir();
     try {
       fs.rmSync(installDir, { recursive: true, force: true });
       this.settings.backendVersion = "";
@@ -1880,7 +1874,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
   }
 
   getBackendExecutablePath() {
-    return getBackendExecutablePath(this.settings);
+    return getBackendExecutablePath();
   }
 
   // ── Backend Communication ────────────────────────────────────────────────
@@ -1913,7 +1907,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
   }
 
   async startBackendProcess() {
-    const installDir = getBackendInstallDir(this.settings);
+    const installDir = getBackendInstallDir();
     const executable = this.getBackendExecutablePath();
     const command = `"${executable}" serve --host 127.0.0.1 --port 8765`;
 

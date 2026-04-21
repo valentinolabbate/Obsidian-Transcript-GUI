@@ -1,6 +1,6 @@
 # Obsidian Transcript GUI
 
-Obsidian-Plugin als GUI fuer die Lecture-Pipeline. Das Backend wird jetzt automatisch verwaltet.
+Obsidian-Plugin als GUI fuer die Lecture-Pipeline. Das Backend wird jetzt automatisch im Plugin-Ordner verwaltet.
 
 ## Funktionen
 
@@ -10,7 +10,7 @@ Obsidian-Plugin als GUI fuer die Lecture-Pipeline. Das Backend wird jetzt automa
 - Kurs, Datum, Sitzungstyp und Thema erfassen
 - Kurs aus aktuellem Vault-Kontext vorbelegen
 - letzten Lauf im Modal anzeigen
-- Backend wird automatisch installiert und gestartet
+- Backend wird automatisch im Plugin-Ordner installiert und gestartet
 - erzeugte Sitzungsnotiz direkt in Obsidian oeffnen
 
 ## Installation
@@ -19,7 +19,7 @@ Obsidian-Plugin als GUI fuer die Lecture-Pipeline. Das Backend wird jetzt automa
 2. In BRAT: `Add Beta plugin with frozen version` oder `Add Beta plugin`.
 3. Repo-URL eingeben: `https://github.com/valentinolabbate/Obsidian-Transcript-GUI`
 4. Das Plugin fragt beim ersten Start nach, ob das Backend installiert werden soll.
-5. Nach der Bestaetigung laedt das Plugin das Backend herunter, erstellt eine Python-Umgebung und installiert alles automatisch.
+5. Nach der Bestaetigung laedt das Plugin das Backend herunter, erstellt eine Python-Umgebung und installiert alles automatisch im Plugin-Ordner.
 
 ## Backend
 
@@ -31,7 +31,7 @@ Das Plugin spricht die lokale API des `obsidian-lecture-pipeline`-Backends an:
 - `GET /jobs/{job_id}`
 - `POST /jobs/{job_id}/cancel`
 
-Das Backend wird außerhalb des Vaults unter `~/.config/obsidian-transcript-server` verwaltet.
+Das Backend wird im Plugin-Ordner unter `<vault>/.obsidian/plugins/obsidian-transcript-gui/.backend/` verwaltet.
 
 ## BRAT
 
