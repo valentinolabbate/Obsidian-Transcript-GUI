@@ -222,13 +222,34 @@ async function extractTarGz(tarPath, destDir) {
   await execPromise(`tar -xzf "${tarPath}" -C "${destDir}"`);
 }
 
-async function checkCommandAvailable(command) {
+const KNOWN_BIN_PATHS = [
+  "/opt/homebrew/bin",
+  "/usr/local/bin",
+  "/opt/local/bin",
+];
+
+async function resolveCommandPath(command) {
+  // 1. Try PATH (which)
   try {
-    await execPromise(`which ${command}`);
-    return true;
-  } catch (_error) {
-    return false;
+    const { stdout } = await execPromise(`which ${command}`);
+    const trimmed = stdout.trim();
+    if (trimmed) return trimmed;
+  } catch (_e) {
+    // ignore
   }
+
+  // 2. Try known absolute paths
+  for (const base of KNOWN_BIN_PATHS) {
+    const absolute = path.join(base, command);
+    try {
+      fs.accessSync(absolute, fs.constants.X_OK);
+      return absolute;
+    } catch (_e) {
+      // ignore
+    }
+  }
+
+  return null;
 }
 
 async function getCommandVersion(command) {
@@ -245,13 +266,6 @@ async function getCommandVersion(command) {
 }
 
 async function findPythonCommand() {
-  // Obsidian's PATH often misses Homebrew paths (/opt/homebrew/bin).
-  // We check both via 'which' and via known absolute paths.
-  const knownPaths = [
-    "/opt/homebrew/bin",
-    "/usr/local/bin",
-    "/opt/local/bin",
-  ];
   const candidates = [
     "python3.13",
     "python3.12",
@@ -262,47 +276,20 @@ async function findPythonCommand() {
 
   let best = null;
 
-  // First pass: check via PATH (which)
   for (const cmd of candidates) {
-    const available = await checkCommandAvailable(cmd);
-    if (!available) continue;
-    const version = await getCommandVersion(cmd);
+    const resolved = await resolveCommandPath(cmd);
+    if (!resolved) continue;
+    const version = await getCommandVersion(resolved);
     if (!version) continue;
     if (version.major < 3) continue;
     if (!best) {
-      best = { cmd, version };
+      best = { cmd: resolved, version };
       continue;
     }
     if (version.major > best.version.major) {
-      best = { cmd, version };
+      best = { cmd: resolved, version };
     } else if (version.major === best.version.major && version.minor > best.version.minor) {
-      best = { cmd, version };
-    }
-  }
-
-  // Second pass: check absolute paths if PATH search didn't find 3.11+
-  if (!best || best.version.major < 3 || (best.version.major === 3 && best.version.minor < 11)) {
-    for (const basePath of knownPaths) {
-      for (const cmd of candidates) {
-        const absolutePath = path.join(basePath, cmd);
-        try {
-          fs.accessSync(absolutePath, fs.constants.X_OK);
-        } catch (_e) {
-          continue;
-        }
-        const version = await getCommandVersion(absolutePath);
-        if (!version) continue;
-        if (version.major < 3) continue;
-        if (!best) {
-          best = { cmd: absolutePath, version };
-          continue;
-        }
-        if (version.major > best.version.major) {
-          best = { cmd: absolutePath, version };
-        } else if (version.major === best.version.major && version.minor > best.version.minor) {
-          best = { cmd: absolutePath, version };
-        }
-      }
+      best = { cmd: resolved, version };
     }
   }
 
@@ -1933,8 +1920,8 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
       }
       const pythonCmd = pythonInfo.cmd;
 
-      const hasFfmpeg = await checkCommandAvailable("ffmpeg");
-      if (!hasFfmpeg) {
+      const ffmpegPath = await resolveCommandPath("ffmpeg");
+      if (!ffmpegPath) {
         throw new Error("ffmpeg ist nicht installiert oder nicht im PATH. Bitte installiere ffmpeg (z.B. via Homebrew: brew install ffmpeg).");
       }
 
