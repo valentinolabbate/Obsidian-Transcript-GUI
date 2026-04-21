@@ -1,27 +1,36 @@
 .transcript-gui-modal-host {
-  --transcript-gui-radius-xl: 24px;
-  --transcript-gui-radius-lg: 18px;
+  --transcript-gui-radius-xl: 28px;
+  --transcript-gui-radius-lg: 20px;
   --transcript-gui-radius-md: 14px;
+  --transcript-gui-radius-sm: 10px;
+  --transcript-gui-accent-soft: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+  --transcript-gui-panel: color-mix(in srgb, var(--background-secondary) 90%, transparent);
+  --transcript-gui-panel-strong: color-mix(in srgb, var(--background-primary) 88%, transparent);
+  --transcript-gui-border: color-mix(in srgb, var(--background-modifier-border) 84%, transparent);
 }
 
 .transcript-gui-modal-host .modal {
-  width: min(920px, calc(100vw - 3rem));
-  max-width: 920px;
+  width: min(1380px, calc(100vw - 2rem));
+  max-width: 1380px;
+  max-height: calc(100vh - 2rem);
   border-radius: var(--transcript-gui-radius-xl);
-  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 78%, transparent);
+  border: 1px solid var(--transcript-gui-border);
   background:
-    radial-gradient(circle at top right, color-mix(in srgb, var(--interactive-accent) 12%, transparent), transparent 38%),
+    radial-gradient(circle at top right, color-mix(in srgb, var(--interactive-accent) 14%, transparent), transparent 34%),
+    radial-gradient(circle at top left, color-mix(in srgb, var(--color-cyan) 8%, transparent), transparent 30%),
     linear-gradient(180deg, color-mix(in srgb, var(--background-secondary) 88%, transparent), var(--background-primary));
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+  box-shadow: 0 32px 90px rgba(0, 0, 0, 0.38);
   overflow: hidden;
 }
 
 .transcript-gui-modal-host .modal-content {
   padding: 0;
+  overflow: auto;
+  max-height: calc(100vh - 2rem);
 }
 
 .transcript-gui-modal {
-  padding: 1.25rem;
+  padding: 1.35rem;
 }
 
 .transcript-gui-shell {
@@ -32,116 +41,143 @@
 
 .transcript-gui-hero {
   display: flex;
-  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 1.25rem 1.35rem;
+  gap: 1.2rem;
+  padding: 1.5rem 1.6rem;
   border-radius: var(--transcript-gui-radius-xl);
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--interactive-accent) 15%, var(--background-secondary)), var(--background-secondary-alt));
-  border: 1px solid color-mix(in srgb, var(--interactive-accent) 18%, var(--background-modifier-border));
+    linear-gradient(135deg, color-mix(in srgb, var(--interactive-accent) 15%, var(--background-secondary)), color-mix(in srgb, var(--background-secondary-alt) 92%, transparent));
+  border: 1px solid color-mix(in srgb, var(--interactive-accent) 22%, var(--background-modifier-border));
 }
 
 .transcript-gui-hero-copy {
-  flex: 1 1 380px;
+  flex: 1 1 540px;
+  min-width: 0;
 }
 
 .transcript-gui-hero-copy h2 {
   margin: 0;
-  font-size: clamp(1.45rem, 1.1rem + 1vw, 2rem);
-  line-height: 1.05;
-  letter-spacing: -0.03em;
+  font-size: clamp(1.7rem, 1.2rem + 1vw, 2.4rem);
+  line-height: 1.02;
+  letter-spacing: -0.035em;
 }
 
 .transcript-gui-hero-copy p {
-  margin: 0.55rem 0 0;
+  margin: 0.6rem 0 0;
+  max-width: 72ch;
   color: var(--text-muted);
-  max-width: 58ch;
-  line-height: 1.45;
+  line-height: 1.48;
+}
+
+.transcript-gui-hero-note {
+  margin-top: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0.65rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--interactive-accent) 28%, transparent);
+  background: color-mix(in srgb, var(--background-primary) 74%, transparent);
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  line-height: 1.4;
 }
 
 .transcript-gui-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.65rem;
-  align-items: flex-start;
-  justify-content: flex-end;
-  flex: 0 1 280px;
+  flex: 0 1 410px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  align-self: stretch;
 }
 
 .transcript-gui-badge {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  min-width: 110px;
-  padding: 0.75rem 0.9rem;
-  border-radius: 999px;
+  justify-content: center;
+  gap: 0.25rem;
+  min-height: 82px;
+  padding: 0.9rem 1rem;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 76%, transparent);
   background: color-mix(in srgb, var(--background-primary) 76%, transparent);
-  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 72%, transparent);
   backdrop-filter: blur(8px);
 }
 
 .transcript-gui-badge-label {
   font-size: 0.72rem;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.09em;
   color: var(--text-faint);
 }
 
 .transcript-gui-badge-value {
-  font-size: 0.92rem;
-  font-weight: 600;
-  line-height: 1.2;
+  font-size: 0.96rem;
+  font-weight: 700;
+  line-height: 1.3;
   word-break: break-word;
+}
+
+.transcript-gui-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(340px, 0.9fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.transcript-gui-main-column,
+.transcript-gui-aside-column,
+.transcript-gui-form,
+.transcript-gui-sticky-stack,
+.transcript-gui-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.transcript-gui-sticky-stack {
+  position: sticky;
+  top: 0;
 }
 
 .transcript-gui-run-summary,
 .transcript-gui-section,
-.transcript-gui-status {
+.transcript-gui-status,
+.transcript-gui-progress {
   border-radius: var(--transcript-gui-radius-lg);
-  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 82%, transparent);
-  background: color-mix(in srgb, var(--background-secondary) 82%, transparent);
+  border: 1px solid var(--transcript-gui-border);
+  background: var(--transcript-gui-panel);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
 }
 
-.transcript-gui-run-summary {
-  padding: 0.95rem 1.1rem;
+.transcript-gui-section,
+.transcript-gui-run-summary,
+.transcript-gui-progress,
+.transcript-gui-status {
+  padding: 1.05rem 1.1rem;
 }
 
-.transcript-gui-run-title {
-  font-size: 0.8rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+.transcript-gui-section-heading {
+  margin-bottom: 1rem;
+}
+
+.transcript-gui-section-heading h3 {
+  margin: 0;
+  font-size: 1.02rem;
+  line-height: 1.2;
+}
+
+.transcript-gui-section-heading p {
+  margin: 0.4rem 0 0;
   color: var(--text-muted);
-  margin-bottom: 0.45rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
 }
 
-.transcript-gui-run-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.55rem;
-}
-
-.transcript-gui-run-meta span {
-  padding: 0.3rem 0.55rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--background-primary) 70%, transparent);
-  color: var(--text-normal);
-  font-size: 0.82rem;
-}
-
-.transcript-gui-run-path {
-  margin-top: 0.65rem;
-  font-size: 0.88rem;
-  color: var(--text-muted);
-  word-break: break-word;
-}
-
-.transcript-gui-form {
-  display: flex;
-  flex-direction: column;
+.transcript-gui-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.95fr);
   gap: 1rem;
 }
 
@@ -149,33 +185,6 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.85rem;
-}
-
-.transcript-gui-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
-  gap: 1rem;
-}
-
-.transcript-gui-section {
-  padding: 1rem 1.05rem 1.05rem;
-}
-
-.transcript-gui-section-heading {
-  margin-bottom: 0.9rem;
-}
-
-.transcript-gui-section-heading h3 {
-  margin: 0;
-  font-size: 1rem;
-  line-height: 1.2;
-}
-
-.transcript-gui-section-heading p {
-  margin: 0.35rem 0 0;
-  color: var(--text-muted);
-  font-size: 0.9rem;
-  line-height: 1.4;
 }
 
 .transcript-gui-field {
@@ -188,7 +197,9 @@
 .transcript-gui-field + .transcript-gui-inline-actions,
 .transcript-gui-inline-actions + .transcript-gui-field,
 .transcript-gui-meta-grid,
-.transcript-gui-info-card {
+.transcript-gui-info-card,
+.transcript-gui-summary-grid,
+.transcript-gui-source-preview {
   margin-top: 0.95rem;
 }
 
@@ -199,28 +210,33 @@
 }
 
 .transcript-gui-field-description {
+  margin-top: -0.15rem;
   font-size: 0.8rem;
   color: var(--text-muted);
-  margin-top: -0.2rem;
 }
 
 .transcript-gui-input,
 .transcript-gui-select {
   width: 100%;
-  min-height: 46px;
-  padding: 0.8rem 0.9rem;
+  min-height: 48px;
+  padding: 0.82rem 0.92rem;
   border-radius: var(--transcript-gui-radius-md);
-  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 88%, transparent);
-  background: color-mix(in srgb, var(--background-primary) 86%, transparent);
+  border: 1px solid var(--transcript-gui-border);
+  background: color-mix(in srgb, var(--background-primary) 88%, transparent);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
   transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
 }
 
+.transcript-gui-input:hover,
+.transcript-gui-select:hover {
+  border-color: color-mix(in srgb, var(--interactive-accent) 28%, var(--background-modifier-border));
+}
+
 .transcript-gui-input:focus,
 .transcript-gui-select:focus {
-  border-color: color-mix(in srgb, var(--interactive-accent) 78%, var(--background-modifier-border));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 16%, transparent);
   outline: none;
+  border-color: color-mix(in srgb, var(--interactive-accent) 76%, var(--background-modifier-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 15%, transparent);
 }
 
 .transcript-gui-meta-grid {
@@ -230,153 +246,174 @@
 }
 
 .transcript-gui-inline-actions,
-.transcript-gui-actions {
+.transcript-gui-actions,
+.transcript-gui-history-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 0.7rem;
 }
 
 .transcript-gui-secondary-button,
-.transcript-gui-actions button {
+.transcript-gui-actions button,
+.transcript-gui-history-link {
   min-height: 42px;
   padding: 0.75rem 1rem;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 85%, transparent);
-  background: color-mix(in srgb, var(--background-primary) 80%, transparent);
+  border: 1px solid var(--transcript-gui-border);
+  background: color-mix(in srgb, var(--background-primary) 82%, transparent);
   font-weight: 600;
-  transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+  transition: transform 120ms ease, border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
 }
 
 .transcript-gui-secondary-button:hover,
-.transcript-gui-actions button:hover {
-  border-color: color-mix(in srgb, var(--interactive-accent) 34%, var(--background-modifier-border));
+.transcript-gui-actions button:hover,
+.transcript-gui-history-link:hover {
   transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--interactive-accent) 34%, var(--background-modifier-border));
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
 }
 
 .transcript-gui-actions .mod-cta {
-  min-width: 180px;
-  background: linear-gradient(135deg, var(--interactive-accent), color-mix(in srgb, var(--interactive-accent) 72%, white));
+  min-width: 220px;
+  background: linear-gradient(135deg, var(--interactive-accent), color-mix(in srgb, var(--interactive-accent) 74%, white));
   color: var(--text-on-accent);
   border: none;
-  box-shadow: 0 10px 30px color-mix(in srgb, var(--interactive-accent) 22%, transparent);
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--interactive-accent) 20%, transparent);
 }
 
 .transcript-gui-actions .mod-cta:hover {
   transform: translateY(-1px) scale(1.01);
 }
 
-.transcript-gui-info-card {
-  padding: 0.9rem 0.95rem;
-  border-radius: var(--transcript-gui-radius-md);
-  background: color-mix(in srgb, var(--background-primary) 58%, transparent);
-  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 75%, transparent);
+.transcript-gui-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
 }
 
+.transcript-gui-summary-item {
+  padding: 0.8rem 0.9rem;
+  border-radius: var(--transcript-gui-radius-md);
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 74%, transparent);
+  background: color-mix(in srgb, var(--background-primary) 58%, transparent);
+}
+
+.transcript-gui-summary-item.is-wide {
+  grid-column: 1 / -1;
+}
+
+.transcript-gui-summary-label,
+.transcript-gui-run-title,
 .transcript-gui-info-title {
-  font-size: 0.8rem;
+  font-size: 0.76rem;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--text-muted);
-  margin-bottom: 0.4rem;
+  color: var(--text-faint);
 }
 
-.transcript-gui-info-line,
-.transcript-gui-hint {
-  color: var(--text-muted);
-  font-size: 0.88rem;
-  line-height: 1.45;
-}
-
-.transcript-gui-footer {
-  display: flex;
-  flex-direction: column;
-  gap: 0.9rem;
-}
-
-.transcript-gui-progress {
-  padding: 0.95rem 1rem;
-  border-radius: var(--transcript-gui-radius-lg);
-  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 82%, transparent);
-  background: color-mix(in srgb, var(--background-secondary) 82%, transparent);
-}
-
-.transcript-gui-progress-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.65rem;
-}
-
-.transcript-gui-progress-stage {
-  font-weight: 700;
-  font-size: 0.92rem;
-}
-
-.transcript-gui-progress-percent {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-}
-
-.transcript-gui-progress-track {
-  position: relative;
-  height: 10px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: color-mix(in srgb, var(--background-primary) 78%, transparent);
-}
-
-.transcript-gui-progress-bar {
-  width: 0;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--interactive-accent), color-mix(in srgb, var(--interactive-accent) 72%, white));
-  transition: width 220ms ease;
-}
-
-.transcript-gui-progress-message {
-  margin-top: 0.65rem;
-  color: var(--text-muted);
-  font-size: 0.88rem;
-  line-height: 1.45;
-}
-
-.transcript-gui-status {
-  padding: 0.9rem 1rem;
-  white-space: pre-wrap;
-  line-height: 1.45;
+.transcript-gui-summary-value {
+  margin-top: 0.3rem;
+  font-size: 0.93rem;
+  font-weight: 650;
+  line-height: 1.35;
   word-break: break-word;
 }
 
-.transcript-gui-status.is-error {
-  border-color: color-mix(in srgb, var(--color-red) 56%, var(--background-modifier-border));
-  background: color-mix(in srgb, var(--color-red) 8%, var(--background-secondary));
+.transcript-gui-empty-state {
+  padding: 0.9rem 0.95rem;
+  border-radius: var(--transcript-gui-radius-md);
+  border: 1px dashed color-mix(in srgb, var(--background-modifier-border) 82%, transparent);
+  background: color-mix(in srgb, var(--background-primary) 44%, transparent);
 }
 
-.transcript-gui-status.is-success {
-  border-color: color-mix(in srgb, var(--color-green) 48%, var(--background-modifier-border));
-  background: color-mix(in srgb, var(--color-green) 8%, var(--background-secondary));
+.transcript-gui-empty-state.is-compact {
+  margin-top: 0.85rem;
 }
 
-.transcript-gui-modal-host button:disabled,
-.transcript-gui-modal-host input:disabled,
-.transcript-gui-modal-host select:disabled {
-  opacity: 0.58;
-  cursor: not-allowed;
+.transcript-gui-empty-title {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--text-normal);
+}
+
+.transcript-gui-empty-copy {
+  margin-top: 0.38rem;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  line-height: 1.48;
+}
+
+.transcript-gui-source-preview,
+.transcript-gui-info-card,
+.transcript-gui-history-card {
+  padding: 0.9rem 0.95rem;
+  border-radius: var(--transcript-gui-radius-md);
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 76%, transparent);
+  background: color-mix(in srgb, var(--background-primary) 58%, transparent);
+}
+
+.transcript-gui-source-preview {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.transcript-gui-info-card.is-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.transcript-gui-info-line,
+.transcript-gui-hint,
+.transcript-gui-run-path,
+.transcript-gui-progress-message,
+.transcript-gui-history-path {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.46;
+  word-break: break-word;
+}
+
+.transcript-gui-hint {
+  padding: 0.75rem 0.85rem;
+  border-radius: var(--transcript-gui-radius-md);
+  background: color-mix(in srgb, var(--background-primary) 56%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--background-modifier-border) 82%, transparent);
+}
+
+.transcript-gui-hint-accent {
+  background: color-mix(in srgb, var(--interactive-accent) 9%, var(--background-primary));
+  border-color: color-mix(in srgb, var(--interactive-accent) 28%, transparent);
+}
+
+.transcript-gui-run-meta,
+.transcript-gui-history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+}
+
+.transcript-gui-run-meta span,
+.transcript-gui-history-meta span {
+  padding: 0.28rem 0.52rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background-secondary) 80%, transparent);
+  color: var(--text-muted);
+  font-size: 0.78rem;
 }
 
 .transcript-gui-history-card {
-  padding: 0.95rem 1rem;
-  border-radius: var(--transcript-gui-radius-md);
-  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 82%, transparent);
-  background: color-mix(in srgb, var(--background-primary) 58%, transparent);
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
 }
 
 .transcript-gui-history-card.is-error {
-  border-color: color-mix(in srgb, var(--color-red) 35%, var(--background-modifier-border));
+  border-color: color-mix(in srgb, var(--color-red) 34%, var(--background-modifier-border));
 }
 
 .transcript-gui-history-card.is-success {
@@ -391,28 +428,24 @@
 }
 
 .transcript-gui-history-title {
-  font-weight: 700;
-  line-height: 1.3;
   flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-weight: 700;
+  line-height: 1.34;
 }
 
 .transcript-gui-history-delete {
-  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border-radius: 999px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-muted);
   opacity: 0.45;
-  cursor: pointer;
   transition: opacity 120ms ease, background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 
@@ -420,61 +453,97 @@
   opacity: 1;
   color: var(--color-red);
   background: color-mix(in srgb, var(--color-red) 12%, transparent);
-  border-color: color-mix(in srgb, var(--color-red) 30%, transparent);
+  border-color: color-mix(in srgb, var(--color-red) 28%, transparent);
 }
 
-.transcript-gui-history-meta {
+.transcript-gui-progress-head {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  margin-bottom: 0.7rem;
 }
 
-.transcript-gui-history-meta span {
-  padding: 0.25rem 0.5rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--background-secondary) 78%, transparent);
-  color: var(--text-muted);
-  font-size: 0.78rem;
+.transcript-gui-progress-stage {
+  font-weight: 700;
+  font-size: 0.94rem;
 }
 
-.transcript-gui-history-path {
-  color: var(--text-muted);
+.transcript-gui-progress-percent {
   font-size: 0.84rem;
-  line-height: 1.4;
-  word-break: break-word;
+  color: var(--text-muted);
 }
 
-.transcript-gui-history-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.55rem;
-}
-
-.transcript-gui-history-link {
-  min-height: 34px;
-  padding: 0.45rem 0.8rem;
+.transcript-gui-progress-track {
+  position: relative;
+  height: 10px;
+  overflow: hidden;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 85%, transparent);
-  background: color-mix(in srgb, var(--background-secondary) 88%, transparent);
-  font-size: 0.82rem;
-  font-weight: 600;
+  background: color-mix(in srgb, var(--background-primary) 82%, transparent);
 }
 
-@media (max-width: 900px) {
+.transcript-gui-progress-bar {
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--interactive-accent), color-mix(in srgb, var(--interactive-accent) 72%, white));
+  transition: width 220ms ease;
+}
+
+.transcript-gui-status {
+  white-space: pre-wrap;
+  line-height: 1.46;
+}
+
+.transcript-gui-status.is-error {
+  border-color: color-mix(in srgb, var(--color-red) 54%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--color-red) 8%, var(--background-secondary));
+}
+
+.transcript-gui-status.is-success {
+  border-color: color-mix(in srgb, var(--color-green) 48%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--color-green) 8%, var(--background-secondary));
+}
+
+.transcript-gui-modal-host button:disabled,
+.transcript-gui-modal-host input:disabled,
+.transcript-gui-modal-host select:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
+}
+
+@media (max-width: 1260px) {
   .transcript-gui-modal-host .modal {
-    width: min(100vw - 1.5rem, 760px);
+    width: min(1180px, calc(100vw - 1.5rem));
   }
 
-  .transcript-gui-grid {
-    grid-template-columns: 1fr;
+  .transcript-gui-workspace {
+    grid-template-columns: minmax(0, 1fr) 360px;
+  }
+}
+
+@media (max-width: 980px) {
+  .transcript-gui-modal-host .modal {
+    width: min(100vw - 1rem, 920px);
   }
 
+  .transcript-gui-workspace,
+  .transcript-gui-grid,
   .transcript-gui-history-grid {
     grid-template-columns: 1fr;
   }
+
+  .transcript-gui-sticky-stack {
+    position: static;
+  }
+
+  .transcript-gui-badges {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 720px) {
   .transcript-gui-modal {
     padding: 0.8rem;
   }
@@ -482,26 +551,30 @@
   .transcript-gui-hero,
   .transcript-gui-section,
   .transcript-gui-run-summary,
+  .transcript-gui-progress,
   .transcript-gui-status {
-    border-radius: 16px;
+    border-radius: 18px;
   }
 
-  .transcript-gui-badges {
-    justify-content: flex-start;
+  .transcript-gui-hero {
+    padding: 1.1rem;
   }
 
-  .transcript-gui-meta-grid {
+  .transcript-gui-badges,
+  .transcript-gui-meta-grid,
+  .transcript-gui-summary-grid {
     grid-template-columns: 1fr;
   }
 
   .transcript-gui-inline-actions,
-  .transcript-gui-actions {
+  .transcript-gui-actions,
+  .transcript-gui-history-actions {
     flex-direction: column;
   }
 
-  .transcript-gui-actions .mod-cta,
   .transcript-gui-secondary-button,
-  .transcript-gui-actions button {
+  .transcript-gui-actions button,
+  .transcript-gui-history-link {
     width: 100%;
   }
 }

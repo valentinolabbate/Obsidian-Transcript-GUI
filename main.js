@@ -13,7 +13,9 @@ const {
 const { spawn } = require("child_process");
 const path = require("path");
 
-const AUDIO_EXTENSIONS = new Set(["mp3", "m4a", "wav", "mp4", "webm", "ogg", "flac", "aac", "aiff"]);
+const AUDIO_EXTENSIONS = new Set(["mp3", "m4a", "wav", "ogg", "flac", "aac", "aiff"]);
+const VIDEO_EXTENSIONS = new Set(["mp4", "webm", "mov", "mkv", "avi", "m4v"]);
+const MEDIA_EXTENSIONS = new Set([...AUDIO_EXTENSIONS, ...VIDEO_EXTENSIONS]);
 
 const DEFAULT_SESSION_PROFILES = [
   {
@@ -131,7 +133,7 @@ class AudioFileSuggestModal extends FuzzySuggestModal {
     super(app);
     this.files = files;
     this.onChoose = onChoose;
-    this.setPlaceholder("Audio-Datei waehlen...");
+    this.setPlaceholder("Audio- oder Video-Datei waehlen...");
   }
 
   getItems() {
@@ -215,48 +217,34 @@ class TranscriptProcessModal extends Modal {
     const selectedProfile = this.plugin.getSessionProfile(this.state.sessionType);
     heroTextEl.createEl("h2", { text: "Sitzungstranskript importieren" });
     heroTextEl.createEl("p", {
-      text: "Audio uebernehmen, Sitzungsmetadaten setzen und die lokale Pipeline direkt aus Obsidian starten.",
+      text: "Audio oder Video uebernehmen, fertige Rohtranskripte weiterverarbeiten und die lokale Pipeline direkt aus Obsidian steuern.",
+    });
+    heroTextEl.createEl("div", {
+      cls: "transcript-gui-hero-note",
+      text: "Video-Dateien werden automatisch auf ihre Tonspur reduziert. Fertige Rohtranskripte koennen direkt zusammengefasst werden.",
     });
 
     const badgeRowEl = heroEl.createDiv({ cls: "transcript-gui-badges" });
     this.createBadge(badgeRowEl, this.state.course ? this.state.course.replaceAll("_", " ") : "Kein Kontext", "Kontext");
     this.createBadge(badgeRowEl, this.state.sessionType, "Typ");
-    this.createBadge(badgeRowEl, this.state.sourceMode === "audio" ? "Audio" : "Transkript", "Quelle");
+    this.createBadge(badgeRowEl, this.getSelectedSourceKindLabel(), "Quelle");
     this.createBadge(badgeRowEl, this.plugin.settings.inboxFolder, "Inbox");
 
     const lastRun = this.plugin.settings.lastRun;
-    if (lastRun) {
-      const lastRunClass = lastRun.status === "failed" ? "transcript-gui-status is-error" : "transcript-gui-status is-success";
-      const lastRunEl = shellEl.createDiv({ cls: `transcript-gui-run-summary ${lastRunClass}` });
-      lastRunEl.createEl("div", { cls: "transcript-gui-run-title", text: "Letzter Lauf" });
-      const metaEl = lastRunEl.createDiv({ cls: "transcript-gui-run-meta" });
-      metaEl.createSpan({ text: lastRun.timestamp || "unbekannt" });
-      metaEl.createSpan({ text: lastRun.status || "unbekannt" });
-      if (lastRun.sessionType) {
-        metaEl.createSpan({ text: lastRun.sessionType });
-      }
-      if (lastRun.course) {
-        metaEl.createSpan({ text: lastRun.course.replaceAll("_", " ") });
-      }
-      if (lastRun.notePath) {
-        lastRunEl.createDiv({ cls: "transcript-gui-run-path", text: lastRun.notePath });
-      }
-      if (lastRun.error) {
-        lastRunEl.createDiv({ cls: "transcript-gui-run-path", text: lastRun.error });
-      }
-    }
-
-    const formEl = shellEl.createDiv({ cls: "transcript-gui-form" });
+    const workspaceEl = shellEl.createDiv({ cls: "transcript-gui-workspace" });
+    const mainColumnEl = workspaceEl.createDiv({ cls: "transcript-gui-main-column" });
+    const asideColumnEl = workspaceEl.createDiv({ cls: "transcript-gui-aside-column" });
+    const formEl = mainColumnEl.createDiv({ cls: "transcript-gui-form" });
 
     const sourceSectionEl = this.createSection(
       formEl,
       "Quelle",
-      "Waehle eine Audio-Datei oder ein vorhandenes Rohtranskript aus dem Vault."
+      "Waehle eine Audio- oder Video-Datei oder ein vorhandenes Rohtranskript aus dem Vault."
     );
     const sourceModeFieldEl = this.createField(sourceSectionEl, "Quelltyp");
     const sourceModeSelectEl = sourceModeFieldEl.createEl("select", { cls: "transcript-gui-select" });
     [
-      { value: "audio", label: "Audio-Datei" },
+      { value: "audio", label: "Audio oder Video" },
       { value: "transcript", label: "Fertiges Transkript" },
     ].forEach((option) => {
       const optionEl = sourceModeSelectEl.createEl("option", { text: option.label, value: option.value });
@@ -269,10 +257,10 @@ class TranscriptProcessModal extends Modal {
     });
 
     if (this.state.sourceMode === "audio") {
-      const audioFieldEl = this.createField(sourceSectionEl, "Audio-Datei", "Pfad relativ zum Vault");
+      const audioFieldEl = this.createField(sourceSectionEl, "Audio- oder Video-Datei", "Pfad relativ zum Vault");
       const audioInputEl = audioFieldEl.createEl("input", { cls: "transcript-gui-input" });
       audioInputEl.type = "text";
-      audioInputEl.placeholder = "99_Inbox/Audio/datei.m4a";
+      audioInputEl.placeholder = "99_Inbox/Audio/datei.m4a oder datei.mp4";
       audioInputEl.value = this.state.audioPath;
       audioInputEl.addEventListener("input", (event) => {
         this.state.audioPath = event.target.value.trim();
@@ -282,7 +270,7 @@ class TranscriptProcessModal extends Modal {
       this.createActionButton(audioActionsEl, "Neueste Inbox-Datei", async () => {
         const latest = this.plugin.getLatestInboxAudio();
         if (!latest) {
-          new Notice("Keine Audio-Datei in der Inbox gefunden.");
+          new Notice("Keine Audio- oder Video-Datei in der Inbox gefunden.");
           return;
         }
         this.state.audioPath = latest.path;
@@ -291,13 +279,17 @@ class TranscriptProcessModal extends Modal {
       this.createActionButton(audioActionsEl, "Neueste direkt starten", async () => {
         const latest = this.plugin.getLatestInboxAudio();
         if (!latest) {
-          new Notice("Keine Audio-Datei in der Inbox gefunden.");
+          new Notice("Keine Audio- oder Video-Datei in der Inbox gefunden.");
           return;
         }
         this.state.audioPath = latest.path;
         await this.submit();
       });
       this.createActionButton(audioActionsEl, "Im Vault waehlen", () => this.chooseAudioFile());
+      sourceSectionEl.createEl("div", {
+        cls: "transcript-gui-hint transcript-gui-hint-accent",
+        text: "Videos werden nur fuer ihre Tonspur genutzt. Die eigentliche Bildspur wird ignoriert.",
+      });
     } else {
       const transcriptFieldEl = this.createField(sourceSectionEl, "Transkript-Datei", "Pfad zu .transcript.md oder .segments.json");
       const transcriptInputEl = transcriptFieldEl.createEl("input", { cls: "transcript-gui-input" });
@@ -321,18 +313,22 @@ class TranscriptProcessModal extends Modal {
       this.createActionButton(transcriptActionsEl, "Metadaten laden", async () => {
         await this.autofillFromTranscriptPath(this.state.transcriptPath, { showNotice: true });
       });
+      sourceSectionEl.createEl("div", {
+        cls: "transcript-gui-hint",
+        text: "Ideal, wenn die Transkription bereits vorliegt und nur noch die strukturierte Zusammenfassung erstellt werden soll.",
+      });
     }
 
     const detailsGridEl = formEl.createDiv({ cls: "transcript-gui-grid" });
     const detailsSectionEl = this.createSection(
       detailsGridEl,
       "Sitzungsdaten",
-      "Die Metadaten steuern Dateiname, Kontext und Note."
+      "Die Metadaten steuern Dateiname, Typ und Zielnote."
     );
     const contextSectionEl = this.createSection(
       detailsGridEl,
       "Kontext",
-      "Kontext wird nach Moeglichkeit aus der aktuellen Note erkannt und kann ueberschrieben werden."
+      "Kontext wird moeglichst automatisch erkannt und kann jederzeit angepasst werden."
     );
 
     const courseFieldEl = this.createField(contextSectionEl, "Kontext", "Ordnername oder Projektkontext im Vault");
@@ -381,40 +377,120 @@ class TranscriptProcessModal extends Modal {
     });
 
     const contextInfoEl = contextSectionEl.createDiv({ cls: "transcript-gui-info-card" });
-    contextInfoEl.createEl("div", { cls: "transcript-gui-info-title", text: "Erkannter Kontext" });
+    contextInfoEl.createEl("div", { cls: "transcript-gui-info-title", text: "Automatische Erkennung" });
     contextInfoEl.createEl("div", {
       cls: "transcript-gui-info-line",
-      text: this.state.course ? `Vorausgewaehlter Kontext: ${this.state.course.replaceAll("_", " ")}` : "Kein Kontext aus der aktuellen Note erkannt",
+      text: this.state.course ? `Vorausgewaehlter Kontext: ${this.state.course.replaceAll("_", " ")}` : "Noch kein Kontext erkannt",
     });
     contextInfoEl.createEl("div", {
+      cls: "transcript-gui-info-line",
+      text: this.state.sourceMode === "transcript" ? "Beim Rohtranskript werden Metadaten aus Frontmatter, Pfad und Dateiname uebernommen." : "Beim Audio-/Video-Import bleibt Thema und Kontext frei editierbar.",
+    });
+    if (!this.state.course) {
+      this.createEmptyState(
+        contextInfoEl,
+        "Kontext fehlt noch",
+        "Waehle einen Kontext manuell oder starte aus einer passenden Note heraus, damit die Ablage direkt korrekt gesetzt ist.",
+        "is-compact"
+      );
+    }
+
+    const history = this.plugin.settings.jobHistory || [];
+    const historySectionEl = this.createSection(
+      mainColumnEl,
+      "Letzte Jobs",
+      "Direkte Spruenge zu erzeugten Notizen, Rohtranskripten und Quelldateien."
+    );
+    if (history.length > 0) {
+      const historyGridEl = historySectionEl.createDiv({ cls: "transcript-gui-history-grid" });
+      history.slice(0, 6).forEach((entry) => this.renderHistoryEntry(historyGridEl, entry));
+    } else {
+      this.createEmptyState(
+        historySectionEl,
+        "Noch keine verarbeiteten Sitzungen",
+        "Sobald ein Lauf erfolgreich oder fehlgeschlagen war, erscheint er hier mit Direktlinks zu Notiz, Rohtranskript und Quelle.",
+      );
+    }
+
+    const asideStackEl = asideColumnEl.createDiv({ cls: "transcript-gui-sticky-stack" });
+
+    const summarySectionEl = this.createSection(
+      asideStackEl,
+      "Ueberblick",
+      "Ein kompakter Check vor dem Start der Pipeline."
+    );
+    const summaryGridEl = summarySectionEl.createDiv({ cls: "transcript-gui-summary-grid" });
+    this.createSummaryItem(summaryGridEl, "Quelle", this.getSelectedSourceKindLabel());
+    this.createSummaryItem(summaryGridEl, "Typ", this.state.sessionType || "-");
+    this.createSummaryItem(summaryGridEl, "Datum", this.state.date || "-");
+    this.createSummaryItem(summaryGridEl, "Kontext", this.state.course ? this.state.course.replaceAll("_", " ") : "-");
+    if (this.state.theme) {
+      this.createSummaryItem(summaryGridEl, "Thema", this.state.theme, "is-wide");
+    }
+    if (this.getSelectedSourcePath()) {
+      summarySectionEl.createDiv({ cls: "transcript-gui-source-preview", text: this.getSelectedSourcePath(), attr: { title: this.getSelectedSourcePath() } });
+    } else {
+      this.createEmptyState(
+        summarySectionEl,
+        "Quelle fehlt",
+        "Waehle zuerst eine Audio-/Video-Datei oder ein vorhandenes Rohtranskript aus, bevor du die Pipeline startest.",
+        "is-compact"
+      );
+    }
+
+    const systemSectionEl = this.createSection(
+      asideStackEl,
+      "System",
+      "Aktive Profil- und Backend-Einstellungen fuer diesen Lauf."
+    );
+    const systemInfoEl = systemSectionEl.createDiv({ cls: "transcript-gui-info-card is-compact" });
+    systemInfoEl.createEl("div", {
       cls: "transcript-gui-info-line",
       text: `Backend: ${this.plugin.settings.backendUrl}`,
     });
-    contextInfoEl.createEl("div", {
+    systemInfoEl.createEl("div", {
       cls: "transcript-gui-info-line",
       text: `Template: ${selectedProfile?.templatePath || "Standard-Template"}`,
     });
-    contextInfoEl.createEl("div", {
+    systemInfoEl.createEl("div", {
       cls: "transcript-gui-info-line",
       text: `Zwischenspeicher: ${selectedProfile?.storageDir || "Standardpfad"}`,
     });
-    contextInfoEl.createEl("div", {
+    systemInfoEl.createEl("div", {
       cls: "transcript-gui-info-line",
       text: `Zielordner: ${selectedProfile?.outputDir || "Standardpfad"}`,
     });
 
-    const history = this.plugin.settings.jobHistory || [];
-    if (history.length > 0) {
-      const historySectionEl = this.createSection(
-        shellEl,
-        "Letzte Jobs",
-        "Direkte Spruenge zu erzeugten Notizen, Rohtranskripten und Eingabedateien."
+    if (lastRun) {
+      const lastRunClass = lastRun.status === "failed" ? "transcript-gui-status is-error" : "transcript-gui-status is-success";
+      const lastRunEl = asideStackEl.createDiv({ cls: `transcript-gui-run-summary ${lastRunClass}` });
+      lastRunEl.createEl("div", { cls: "transcript-gui-run-title", text: "Letzter Lauf" });
+      const metaEl = lastRunEl.createDiv({ cls: "transcript-gui-run-meta" });
+      metaEl.createSpan({ text: lastRun.timestamp || "unbekannt" });
+      metaEl.createSpan({ text: lastRun.status || "unbekannt" });
+      if (lastRun.sessionType) {
+        metaEl.createSpan({ text: lastRun.sessionType });
+      }
+      if (lastRun.course) {
+        metaEl.createSpan({ text: lastRun.course.replaceAll("_", " ") });
+      }
+      if (lastRun.notePath) {
+        lastRunEl.createDiv({ cls: "transcript-gui-run-path", text: lastRun.notePath });
+      }
+      if (lastRun.error) {
+        lastRunEl.createDiv({ cls: "transcript-gui-run-path", text: lastRun.error });
+      }
+    } else {
+      const lastRunEl = asideStackEl.createDiv({ cls: "transcript-gui-run-summary" });
+      lastRunEl.createEl("div", { cls: "transcript-gui-run-title", text: "Letzter Lauf" });
+      this.createEmptyState(
+        lastRunEl,
+        "Noch kein Lauf gestartet",
+        "Nach dem ersten Durchlauf findest du hier den letzten Status und den direkten Sprung zur erzeugten Notiz.",
       );
-      const historyGridEl = historySectionEl.createDiv({ cls: "transcript-gui-history-grid" });
-      history.slice(0, 6).forEach((entry) => this.renderHistoryEntry(historyGridEl, entry));
     }
 
-    const footerEl = shellEl.createDiv({ cls: "transcript-gui-footer" });
+    const footerEl = asideStackEl.createDiv({ cls: "transcript-gui-footer" });
     const progressEl = footerEl.createDiv({ cls: "transcript-gui-progress" });
     const progressHeadEl = progressEl.createDiv({ cls: "transcript-gui-progress-head" });
     this.progressStageEl = progressHeadEl.createEl("div", { cls: "transcript-gui-progress-stage", text: "Bereit" });
@@ -424,11 +500,11 @@ class TranscriptProcessModal extends Modal {
     this.progressMessageEl = progressEl.createEl("div", { cls: "transcript-gui-progress-message", text: "Noch kein Job aktiv." });
 
     const actionsEl = footerEl.createDiv({ cls: "transcript-gui-actions" });
-    this.submitButtonEl = actionsEl.createEl("button", { text: this.isSubmitting ? "Verarbeite..." : "Pipeline starten", cls: "mod-cta" });
+    this.submitButtonEl = actionsEl.createEl("button", { text: this.isSubmitting ? "Verarbeite..." : "Pipeline starten", cls: "mod-cta", attr: { title: "Startet den aktuell konfigurierten Lauf" } });
     this.submitButtonEl.disabled = this.isSubmitting;
     this.submitButtonEl.addEventListener("click", () => this.submit());
 
-    this.cancelButtonEl = actionsEl.createEl("button", { text: "Schliessen" });
+    this.cancelButtonEl = actionsEl.createEl("button", { text: "Schliessen", attr: { title: "Schliesst dieses Fenster ohne einen neuen Lauf zu starten" } });
     this.cancelButtonEl.disabled = this.isSubmitting;
     this.cancelButtonEl.addEventListener("click", () => this.close());
 
@@ -468,16 +544,42 @@ class TranscriptProcessModal extends Modal {
 
   createBadge(parentEl, value, label) {
     const badgeEl = parentEl.createDiv({ cls: "transcript-gui-badge" });
+    badgeEl.setAttribute("title", `${label}: ${value}`);
     badgeEl.createSpan({ cls: "transcript-gui-badge-label", text: label });
     badgeEl.createSpan({ cls: "transcript-gui-badge-value", text: value });
     return badgeEl;
   }
 
   createActionButton(parentEl, text, onClick) {
-    const buttonEl = parentEl.createEl("button", { text, cls: "transcript-gui-secondary-button" });
+    const buttonEl = parentEl.createEl("button", { text, cls: "transcript-gui-secondary-button", attr: { title: text, "aria-label": text } });
     buttonEl.addEventListener("click", onClick);
     this.actionButtons.push(buttonEl);
     return buttonEl;
+  }
+
+  createSummaryItem(parentEl, label, value, modifier = "") {
+    const itemEl = parentEl.createDiv({ cls: `transcript-gui-summary-item ${modifier}`.trim() });
+    itemEl.createDiv({ cls: "transcript-gui-summary-label", text: label });
+    itemEl.createDiv({ cls: "transcript-gui-summary-value", text: value || "-" });
+    return itemEl;
+  }
+
+  createEmptyState(parentEl, title, description, modifier = "") {
+    const emptyEl = parentEl.createDiv({ cls: `transcript-gui-empty-state ${modifier}`.trim() });
+    emptyEl.createDiv({ cls: "transcript-gui-empty-title", text: title });
+    emptyEl.createDiv({ cls: "transcript-gui-empty-copy", text: description });
+    return emptyEl;
+  }
+
+  getSelectedSourcePath() {
+    return this.state.sourceMode === "audio" ? this.state.audioPath : this.state.transcriptPath;
+  }
+
+  getSelectedSourceKindLabel() {
+    if (this.state.sourceMode === "transcript") {
+      return "Rohtranskript";
+    }
+    return this.plugin.isVideoPath(this.state.audioPath) ? "Video (nur Tonspur)" : "Audio-Datei";
   }
 
   renderHistoryEntry(parentEl, entry) {
@@ -522,12 +624,12 @@ class TranscriptProcessModal extends Modal {
       this.createHistoryLink(actionsEl, "Transkript", () => this.plugin.openVaultPathFromAbsolutePath(entry.transcriptPath));
     }
     if (entry.audioPath) {
-      this.createHistoryLink(actionsEl, "Audio", () => this.plugin.openVaultPathFromRelativeOrAbsolute(entry.audioPath));
+      this.createHistoryLink(actionsEl, "Quelle", () => this.plugin.openVaultPathFromRelativeOrAbsolute(entry.audioPath));
     }
   }
 
   createHistoryLink(parentEl, text, onClick) {
-    const buttonEl = parentEl.createEl("button", { text, cls: "transcript-gui-history-link" });
+    const buttonEl = parentEl.createEl("button", { text, cls: "transcript-gui-history-link", attr: { title: text, "aria-label": text } });
     buttonEl.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -539,7 +641,7 @@ class TranscriptProcessModal extends Modal {
   async chooseAudioFile() {
     const audioFiles = this.plugin.getAllAudioFiles();
     if (audioFiles.length === 0) {
-      new Notice("Keine Audio-Dateien im Vault gefunden.");
+      new Notice("Keine Audio- oder Video-Dateien im Vault gefunden.");
       return;
     }
     new AudioFileSuggestModal(this.app, audioFiles, (file) => {
@@ -680,7 +782,7 @@ class TranscriptProcessModal extends Modal {
 
   validate() {
     if (this.state.sourceMode === "audio" && !this.state.audioPath) {
-      throw new Error("Bitte eine Audio-Datei angeben.");
+      throw new Error("Bitte eine Audio- oder Video-Datei angeben.");
     }
     if (this.state.sourceMode === "transcript" && !this.state.transcriptPath) {
       throw new Error("Bitte eine Transkript-Datei angeben.");
@@ -856,7 +958,7 @@ class TranscriptGuiSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Inbox-Ordner")
-      .setDesc("Hier sucht die GUI nach der neuesten Audio-Datei.")
+      .setDesc("Hier sucht die GUI nach der neuesten Audio- oder Video-Datei.")
       .addText((text) => {
         text.setPlaceholder("99_Inbox/Audio");
         text.setValue(this.plugin.settings.inboxFolder);
@@ -1021,7 +1123,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
 
     this.addCommand({
       id: "open-transcript-gui-with-latest-inbox-audio",
-      name: "Open transcript GUI with latest inbox audio",
+      name: "Open transcript GUI with latest inbox media",
       callback: () => {
         const latest = this.getLatestInboxAudio();
         this.openProcessModal(latest ? latest.path : "");
@@ -1030,11 +1132,11 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
 
     this.addCommand({
       id: "process-latest-inbox-audio",
-      name: "Process latest inbox audio",
+      name: "Process latest inbox media",
       callback: async () => {
         const latest = this.getLatestInboxAudio();
         if (!latest) {
-          new Notice("Keine Audio-Datei in der Inbox gefunden.");
+          new Notice("Keine Audio- oder Video-Datei in der Inbox gefunden.");
           return;
         }
         const course = this.guessCourseFromContext() || this.settings.courseOptions[0] || "";
@@ -1159,10 +1261,15 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
     new TranscriptProcessModal(this.app, this, initialAudioPath).open();
   }
 
+  isVideoPath(pathLike) {
+    const extension = String(pathLike || "").split(".").pop()?.toLowerCase();
+    return VIDEO_EXTENSIONS.has(extension || "");
+  }
+
   getAllAudioFiles() {
     return this.app.vault.getFiles().filter((file) => {
       const extension = file.extension?.toLowerCase();
-      return AUDIO_EXTENSIONS.has(extension);
+      return MEDIA_EXTENSIONS.has(extension);
     });
   }
 
