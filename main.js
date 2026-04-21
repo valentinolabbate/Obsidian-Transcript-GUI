@@ -300,6 +300,39 @@ function getEnvPath(installDir) {
   return path.join(installDir, ".env");
 }
 
+function readBackendEnv(app) {
+  const installDir = getBackendInstallDir(app);
+  const envPath = getEnvPath(installDir);
+  const defaults = {
+    LECTURE_PIPELINE_VAULT_ROOT: "",
+    LECTURE_PIPELINE_SEMESTER_PATH: "1_Semester_Master_WiWi",
+    LECTURE_PIPELINE_STUDY_ROOT: "10_Studium",
+    LECTURE_PIPELINE_INBOX_DIR: "99_Inbox/Audio",
+    LECTURE_PIPELINE_LM_STUDIO_BASE_URL: "http://127.0.0.1:1234/v1",
+    LECTURE_PIPELINE_LM_STUDIO_MODEL: "qwen/qwen3.6-35b-a3b",
+    LECTURE_PIPELINE_TRANSCRIPTION_MODEL: "mlx-community/whisper-large-v3-turbo",
+    LECTURE_PIPELINE_CHUNK_TARGET_CHARS: "14000",
+    LECTURE_PIPELINE_IDLE_SHUTDOWN_SECONDS: "900",
+    HF_TOKEN: "",
+  };
+  try {
+    const content = fs.readFileSync(envPath, "utf8");
+    const result = {};
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const eqIndex = trimmed.indexOf("=");
+      if (eqIndex === -1) continue;
+      const key = trimmed.slice(0, eqIndex).trim();
+      const value = trimmed.slice(eqIndex + 1).trim();
+      result[key] = value;
+    }
+    return { ...defaults, ...result };
+  } catch (_error) {
+    return { ...defaults };
+  }
+}
+
 function writeBackendEnv(installDir, vaultRoot, overrides = {}) {
   const envPath = getEnvPath(installDir);
   const lines = [
@@ -1155,10 +1188,122 @@ class TranscriptGuiSettingTab extends PluginSettingTab {
           await this.plugin.uninstallBackend();
           this.display();
         });
+});
+
+    // ── Backend-Konfiguration (.env) ──────────────────────────────────────
+    if (installed || hasExecutable) {
+      const env = readBackendEnv(this.plugin.app);
+      const installDir = getBackendInstallDir(this.plugin.app);
+
+      const saveEnv = () => {
+        writeBackendEnv(installDir, env.LECTURE_PIPELINE_VAULT_ROOT, {
+          semesterPath: env.LECTURE_PIPELINE_SEMESTER_PATH,
+          studyRoot: env.LECTURE_PIPELINE_STUDY_ROOT,
+          inboxDir: env.LECTURE_PIPELINE_INBOX_DIR,
+          lmStudioUrl: env.LECTURE_PIPELINE_LM_STUDIO_BASE_URL,
+          lmStudioModel: env.LECTURE_PIPELINE_LM_STUDIO_MODEL,
+          transcriptionModel: env.LECTURE_PIPELINE_TRANSCRIPTION_MODEL,
+          chunkTargetChars: env.LECTURE_PIPELINE_CHUNK_TARGET_CHARS,
+          idleShutdownSeconds: env.LECTURE_PIPELINE_IDLE_SHUTDOWN_SECONDS,
+          hfToken: env.HF_TOKEN,
+        });
+      };
+
+      containerEl.createEl("h3", { text: "Backend-Konfiguration" });
+      containerEl.createEl("p", {
+        cls: "setting-item-description",
+        text: "Einstellungen in der Backend-.env. Nach Aenderungen das Backend neustarten.",
       });
 
+      new Setting(containerEl)
+        .setName("LM Studio URL")
+        .setDesc("Adresse des LM Studio Servers.")
+        .addText((text) => {
+          text.setPlaceholder("http://127.0.0.1:1234/v1");
+          text.setValue(env.LECTURE_PIPELINE_LM_STUDIO_BASE_URL || "");
+          text.onChange((value) => {
+            env.LECTURE_PIPELINE_LM_STUDIO_BASE_URL = value.trim();
+            saveEnv();
+          });
+        });
+
+      new Setting(containerEl)
+        .setName("LM Studio Modell")
+        .setDesc("Modellname fuer die Zusammenfassung.")
+        .addText((text) => {
+          text.setPlaceholder("qwen/qwen3.6-35b-a3b");
+          text.setValue(env.LECTURE_PIPELINE_LM_STUDIO_MODEL || "");
+          text.onChange((value) => {
+            env.LECTURE_PIPELINE_LM_STUDIO_MODEL = value.trim();
+            saveEnv();
+          });
+        });
+
+      new Setting(containerEl)
+        .setName("Transkriptionsmodell")
+        .setDesc("Whisper-Modell fuer die lokale Transkription.")
+        .addText((text) => {
+          text.setPlaceholder("mlx-community/whisper-large-v3-turbo");
+          text.setValue(env.LECTURE_PIPELINE_TRANSCRIPTION_MODEL || "");
+          text.onChange((value) => {
+            env.LECTURE_PIPELINE_TRANSCRIPTION_MODEL = value.trim();
+            saveEnv();
+          });
+        });
+
+      new Setting(containerEl)
+        .setName("Chunk-Groesse (Zeichen)")
+        .setDesc("Zielgroesse der Textbloecke fuer die Zusammenfassung.")
+        .addText((text) => {
+          text.setPlaceholder("14000");
+          text.setValue(env.LECTURE_PIPELINE_CHUNK_TARGET_CHARS || "14000");
+          text.onChange((value) => {
+            env.LECTURE_PIPELINE_CHUNK_TARGET_CHARS = value.trim();
+            saveEnv();
+          });
+        });
+
+      new Setting(containerEl)
+        .setName("Idle-Timeout (Sekunden)")
+        .setDesc("Backend wird nach dieser Zeit automatisch beendet (0 = nie).")
+        .addText((text) => {
+          text.setPlaceholder("900");
+          text.setValue(env.LECTURE_PIPELINE_IDLE_SHUTDOWN_SECONDS || "900");
+          text.onChange((value) => {
+            env.LECTURE_PIPELINE_IDLE_SHUTDOWN_SECONDS = value.trim();
+            saveEnv();
+          });
+        });
+
+      new Setting(containerEl)
+        .setName("Hugging Face Token")
+        .setDesc("Optional. Wird fuer pyannote.audio (Speaker-Diarization) benoetigt.")
+        .addText((text) => {
+          text.setPlaceholder("hf_xxx...");
+          text.setValue(env.HF_TOKEN || "");
+          text.onChange((value) => {
+            env.HF_TOKEN = value.trim();
+            saveEnv();
+          });
+        });
+
+      new Setting(containerEl)
+        .setName("Backend neustarten")
+        .setDesc("Aenderungen an der Konfiguration erfordern einen Neustart des Backends.")
+        .addButton((button) => {
+          button.setButtonText("Backend neustarten");
+          button.onClick(async () => {
+            try {
+              await this.plugin.ensureBackendAvailable({ forceStart: true });
+              new Notice("Backend erfolgreich gestartet.", 4000);
+            } catch (error) {
+              new Notice(`Backend konnte nicht gestartet werden: ${error instanceof Error ? error.message : String(error)}`, 8000);
+            }
+          });
+        });
+    }
+
     new Setting(containerEl)
-      .setName("Inbox-Ordner")
       .setDesc("Hier sucht die GUI nach der neuesten Audio- oder Video-Datei.")
       .addText((text) => {
         text.setPlaceholder("99_Inbox/Audio");
