@@ -137,10 +137,23 @@ function parseTranscriptStem(fileName) {
 
 // ── Backend Installer Helpers ───────────────────────────────────────────────
 
-function getPluginDir() {
+function getPluginDir(app) {
   // In Obsidian plugins, this file lives at:
   // <vault>/.obsidian/plugins/obsidian-transcript-gui/main.js
   // We derive the plugin dir from __dirname of this module.
+  // If app is provided, try to derive it from the vault path for extra safety.
+  try {
+    if (app?.vault?.adapter instanceof FileSystemAdapter) {
+      const basePath = app.vault.adapter.getBasePath();
+      const candidate = path.join(basePath, ".obsidian", "plugins", "obsidian-transcript-gui");
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+  } catch (_e) {
+    // ignore
+  }
+
   try {
     return path.dirname(__filename);
   } catch (_e) {
@@ -149,23 +162,25 @@ function getPluginDir() {
   }
 }
 
-function getBackendInstallDir() {
-  return path.join(getPluginDir(), ".backend");
+function getBackendInstallDir(app) {
+  return path.join(getPluginDir(app), ".backend");
 }
 
-function isBackendInstalled() {
-  const installDir = getBackendInstallDir();
+function isBackendInstalled(app) {
+  const installDir = getBackendInstallDir(app);
   const executable = path.join(installDir, ".venv", "bin", "lecture-pipeline");
+  const envFile = path.join(installDir, ".env");
   try {
     fs.accessSync(executable, fs.constants.X_OK);
+    fs.accessSync(envFile, fs.constants.R_OK);
     return true;
   } catch (_error) {
     return false;
   }
 }
 
-function getBackendExecutablePath() {
-  return path.join(getBackendInstallDir(), ".venv", "bin", "lecture-pipeline");
+function getBackendExecutablePath(app) {
+  return path.join(getBackendInstallDir(app), ".venv", "bin", "lecture-pipeline");
 }
 
 function execPromise(command, options = {}) {
@@ -205,6 +220,49 @@ function downloadFile(url, destPath) {
 
 async function extractTarGz(tarPath, destDir) {
   await execPromise(`tar -xzf "${tarPath}" -C "${destDir}"`);
+}
+
+async function checkCommandAvailable(command) {
+  try {
+    await execPromise(`which ${command}`);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+async function getPython3Version() {
+  try {
+    const { stdout } = await execPromise(`python3 --version`);
+    const match = stdout.match(/Python\s+(\d+)\.(\d+)/i);
+    if (match) {
+      return { major: parseInt(match[1], 10), minor: parseInt(match[2], 10) };
+    }
+  } catch (_error) {
+    // ignore
+  }
+  return null;
+}
+
+function getEnvPath(installDir) {
+  return path.join(installDir, ".env");
+}
+
+function writeBackendEnv(installDir, vaultRoot, overrides = {}) {
+  const envPath = getEnvPath(installDir);
+  const lines = [
+    `LECTURE_PIPELINE_VAULT_ROOT=${vaultRoot}`,
+    `LECTURE_PIPELINE_SEMESTER_PATH=${overrides.semesterPath || "1_Semester_Master_WiWi"}`,
+    `LECTURE_PIPELINE_STUDY_ROOT=${overrides.studyRoot || "10_Studium"}`,
+    `LECTURE_PIPELINE_INBOX_DIR=${overrides.inboxDir || "99_Inbox/Audio"}`,
+    `LECTURE_PIPELINE_LM_STUDIO_BASE_URL=${overrides.lmStudioUrl || "http://127.0.0.1:1234/v1"}`,
+    `LECTURE_PIPELINE_LM_STUDIO_MODEL=${overrides.lmStudioModel || "qwen/qwen3.6-35b-a3b"}`,
+    `LECTURE_PIPELINE_TRANSCRIPTION_MODEL=${overrides.transcriptionModel || "mlx-community/whisper-large-v3-turbo"}`,
+    `LECTURE_PIPELINE_CHUNK_TARGET_CHARS=${overrides.chunkTargetChars || "14000"}`,
+    `LECTURE_PIPELINE_IDLE_SHUTDOWN_SECONDS=${overrides.idleShutdownSeconds || "900"}`,
+    `HF_TOKEN=${overrides.hfToken || ""}`,
+  ];
+  fs.writeFileSync(envPath, lines.join("\n") + "\n", "utf8");
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -1116,14 +1174,27 @@ class TranscriptGuiSettingTab extends PluginSettingTab {
         });
       });
 
-    const installed = isBackendInstalled();
-    const installDir = getBackendInstallDir();
+    const installed = isBackendInstalled(this.plugin.app);
+    const installDir = getBackendInstallDir(this.plugin.app);
+    const executable = path.join(installDir, ".venv", "bin", "lecture-pipeline");
+    const envFile = path.join(installDir, ".env");
+    const hasExecutable = (() => { try { fs.accessSync(executable, fs.constants.X_OK); return true; } catch (_e) { return false; } })();
+    const hasEnv = (() => { try { fs.accessSync(envFile, fs.constants.R_OK); return true; } catch (_e) { return false; } })();
 
     containerEl.createEl("h3", { text: "Backend" });
+
+    let statusText = "";
+    if (installed) {
+      statusText = `Installiert im Plugin-Ordner (Version ${this.plugin.settings.backendVersion || "unbekannt"})`;
+    } else if (hasExecutable && !hasEnv) {
+      statusText = `Teilweise installiert: Das Backend-Programm existiert, aber die .env Datei fehlt. Klicke auf \"Jetzt installieren\" um die Installation zu reparieren.`;
+    } else {
+      statusText = "Noch nicht installiert. Das Backend wird im Plugin-Ordner verwaltet.";
+    }
+    containerEl.createEl("p", { text: statusText });
     containerEl.createEl("p", {
-      text: installed
-        ? `Installiert im Plugin-Ordner (Version ${this.plugin.settings.backendVersion || "unbekannt"})`
-        : "Noch nicht installiert. Das Backend wird im Plugin-Ordner verwaltet.",
+      cls: "setting-item-description",
+      text: `Pfad: ${installDir}`,
     });
 
     new Setting(containerEl)
@@ -1750,7 +1821,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
   // ── Backend Lifecycle ────────────────────────────────────────────────────
 
   async handleBackendLifecycle() {
-    const installed = isBackendInstalled();
+    const installed = isBackendInstalled(this.app);
     if (!installed) {
       await this.promptInstallBackend();
       return;
@@ -1782,10 +1853,37 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
   }
 
   async installBackend() {
-    const installDir = getBackendInstallDir();
+    const installDir = getBackendInstallDir(this.app);
     const notice = new Notice("Backend wird heruntergeladen und installiert...", 0);
 
     try {
+      // Check prerequisites
+      notice.setMessage("Prüfe Voraussetzungen...");
+      const hasPython3 = await checkCommandAvailable("python3");
+      if (!hasPython3) {
+        throw new Error("Python 3 ist nicht installiert oder nicht im PATH. Bitte installiere Python 3.11+ (z.B. via Homebrew: brew install python@3.11).");
+      }
+
+      const pythonVersion = await getPython3Version();
+      if (!pythonVersion || pythonVersion.major < 3 || (pythonVersion.major === 3 && pythonVersion.minor < 11)) {
+        throw new Error(`Python 3.11+ wird benötigt, aber gefunden: ${pythonVersion ? `Python ${pythonVersion.major}.${pythonVersion.minor}` : "unbekannt"}. Bitte installiere Python 3.11+ (z.B. via Homebrew: brew install python@3.11).`);
+      }
+
+      const hasFfmpeg = await checkCommandAvailable("ffmpeg");
+      if (!hasFfmpeg) {
+        throw new Error("ffmpeg ist nicht installiert oder nicht im PATH. Bitte installiere ffmpeg (z.B. via Homebrew: brew install ffmpeg).");
+      }
+
+      // Clean up any partial or previous installation to ensure a fresh start
+      if (fs.existsSync(installDir)) {
+        notice.setMessage("Bereite Installation vor...");
+        try {
+          fs.rmSync(installDir, { recursive: true, force: true });
+        } catch (_error) {
+          // Ignore cleanup errors
+        }
+      }
+
       fs.mkdirSync(installDir, { recursive: true });
 
       const tarPath = path.join(installDir, "backend.tar.gz");
@@ -1801,6 +1899,12 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
       }
       const sourceDir = path.join(installDir, extracted);
 
+      // Copy .env.example to install dir before installation
+      const envExamplePath = path.join(sourceDir, ".env.example");
+      if (fs.existsSync(envExamplePath)) {
+        fs.copyFileSync(envExamplePath, path.join(installDir, ".env.example"));
+      }
+
       notice.setMessage("Python-Umgebung wird erstellt...");
       await execPromise(`python3 -m venv "${path.join(installDir, ".venv")}"`, { cwd: installDir });
 
@@ -1814,6 +1918,20 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
       } catch (_error) {
         // Audio dependencies are optional; log silently
       }
+
+      // Create .env with vault root
+      const adapter = this.app.vault.adapter;
+      let vaultRoot = "";
+      if (adapter instanceof FileSystemAdapter) {
+        vaultRoot = adapter.getBasePath();
+      }
+      if (!vaultRoot) {
+        throw new Error("Konnte den Vault-Pfad nicht ermitteln. Bitte stelle sicher, dass dies ein lokaler Vault ist (kein iCloud Drive, OneDrive oder ähnliches als primärer Speicherort).");
+      }
+
+      writeBackendEnv(installDir, vaultRoot, {
+        inboxDir: this.settings.inboxFolder || "99_Inbox/Audio",
+      });
 
       // Cleanup
       fs.unlinkSync(tarPath);
@@ -1832,8 +1950,18 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
   }
 
   async uninstallBackend() {
-    const installDir = getBackendInstallDir();
+    const installDir = getBackendInstallDir(this.app);
     try {
+      // Try to stop any running backend process
+      if (this.lastBackendPid) {
+        try {
+          process.kill(this.lastBackendPid, 0); // Check if process exists
+          process.kill(this.lastBackendPid, "SIGTERM");
+        } catch (_e) {
+          // Process already gone
+        }
+        this.lastBackendPid = null;
+      }
       fs.rmSync(installDir, { recursive: true, force: true });
       this.settings.backendVersion = "";
       await this.saveSettings();
@@ -1874,7 +2002,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
   }
 
   getBackendExecutablePath() {
-    return getBackendExecutablePath();
+    return getBackendExecutablePath(this.app);
   }
 
   // ── Backend Communication ────────────────────────────────────────────────
@@ -1887,6 +2015,11 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
       if (!forceStart) {
         throw error;
       }
+    }
+
+    // Verify backend is actually installed before attempting to start
+    if (!isBackendInstalled(this.app)) {
+      throw new Error("Backend ist nicht installiert. Öffne die Plugin-Einstellungen und klicke auf \"Jetzt installieren\".");
     }
 
     if (!this.backendStartPromise) {
@@ -1907,9 +2040,8 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
   }
 
   async startBackendProcess() {
-    const installDir = getBackendInstallDir();
+    const installDir = getBackendInstallDir(this.app);
     const executable = this.getBackendExecutablePath();
-    const command = `"${executable}" serve --host 127.0.0.1 --port 8765`;
 
     const extraPaths = [
       "/opt/homebrew/bin",
@@ -1922,11 +2054,23 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
       .filter(Boolean)
       .join(":");
 
+    // Pre-flight check: ensure executable works before spawning detached
+    try {
+      await execPromise(`"${executable}" --help`, { cwd: installDir, env: { ...process.env, PATH: patchedPath } });
+    } catch (_error) {
+      throw new Error("Backend-Installation scheint beschädigt zu sein. Versuche eine Neuinstallation über die Plugin-Einstellungen.");
+    }
+
+    const logPath = path.join(installDir, "backend.log");
+    const logStream = fs.createWriteStream(logPath, { flags: "a" });
+    logStream.write(`\n--- Backend started at ${new Date().toISOString()} (PID: ${this.lastBackendPid || "unknown"}) ---\n`);
+
+    const command = `"${executable}" serve --host 127.0.0.1 --port 8765`;
     const child = spawn(command, {
       cwd: installDir,
       shell: true,
       detached: true,
-      stdio: "ignore",
+      stdio: ["ignore", logStream, logStream],
       env: { ...process.env, PATH: patchedPath },
     });
     child.unref();
@@ -1944,6 +2088,6 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
       }
     }
 
-    throw new Error("Backend konnte nicht rechtzeitig gestartet werden.");
+    throw new Error(`Backend konnte nicht rechtzeitig gestartet werden. Prüfe das Log: ${logPath}`);
   }
 };
