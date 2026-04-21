@@ -1,0 +1,33 @@
+.transcript-gui-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.transcript-gui-actions .mod-cta {
+  min-width: 180px;
+}
+
+.transcript-gui-status {
+  margin-top: 1rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  background: var(--background-secondary);
+  white-space: pre-wrap;
+}
+
+.transcript-gui-status.is-error {
+  border-color: var(--color-red);
+}
+
+.transcript-gui-status.is-success {
+  border-color: var(--color-green);
+}
+
+.transcript-gui-hint {
+  margin-top: 0.5rem;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}

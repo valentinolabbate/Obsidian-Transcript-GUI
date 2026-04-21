@@ -1,0 +1,10 @@
+{
+  "id": "obsidian-transcript-gui",
+  "name": "Transcript GUI",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "GUI for the local lecture transcription pipeline.",
+  "author": "Valentino L'Abbate",
+  "authorUrl": "https://github.com/valentinolabbate",
+  "isDesktopOnly": true
+}
