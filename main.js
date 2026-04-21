@@ -245,8 +245,13 @@ async function getCommandVersion(command) {
 }
 
 async function findPythonCommand() {
-  // Prefer versioned python3.11+ commands over plain python3
-  // because macOS ships an old python3 (3.9) in /usr/bin
+  // Obsidian's PATH often misses Homebrew paths (/opt/homebrew/bin).
+  // We check both via 'which' and via known absolute paths.
+  const knownPaths = [
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/opt/local/bin",
+  ];
   const candidates = [
     "python3.13",
     "python3.12",
@@ -254,7 +259,10 @@ async function findPythonCommand() {
     "python3.10",
     "python3",
   ];
+
   let best = null;
+
+  // First pass: check via PATH (which)
   for (const cmd of candidates) {
     const available = await checkCommandAvailable(cmd);
     if (!available) continue;
@@ -271,6 +279,33 @@ async function findPythonCommand() {
       best = { cmd, version };
     }
   }
+
+  // Second pass: check absolute paths if PATH search didn't find 3.11+
+  if (!best || best.version.major < 3 || (best.version.major === 3 && best.version.minor < 11)) {
+    for (const basePath of knownPaths) {
+      for (const cmd of candidates) {
+        const absolutePath = path.join(basePath, cmd);
+        try {
+          fs.accessSync(absolutePath, fs.constants.X_OK);
+        } catch (_e) {
+          continue;
+        }
+        const version = await getCommandVersion(absolutePath);
+        if (!version) continue;
+        if (version.major < 3) continue;
+        if (!best) {
+          best = { cmd: absolutePath, version };
+          continue;
+        }
+        if (version.major > best.version.major) {
+          best = { cmd: absolutePath, version };
+        } else if (version.major === best.version.major && version.minor > best.version.minor) {
+          best = { cmd: absolutePath, version };
+        }
+      }
+    }
+  }
+
   return best;
 }
 
