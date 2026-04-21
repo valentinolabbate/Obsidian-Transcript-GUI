@@ -231,17 +231,47 @@ async function checkCommandAvailable(command) {
   }
 }
 
-async function getPython3Version() {
+async function getCommandVersion(command) {
   try {
-    const { stdout } = await execPromise(`python3 --version`);
+    const { stdout } = await execPromise(`${command} --version`);
     const match = stdout.match(/Python\s+(\d+)\.(\d+)/i);
     if (match) {
-      return { major: parseInt(match[1], 10), minor: parseInt(match[2], 10) };
+      return { major: parseInt(match[1], 10), minor: parseInt(match[2], 10), raw: stdout.trim() };
     }
   } catch (_error) {
     // ignore
   }
   return null;
+}
+
+async function findPythonCommand() {
+  // Prefer versioned python3.11+ commands over plain python3
+  // because macOS ships an old python3 (3.9) in /usr/bin
+  const candidates = [
+    "python3.13",
+    "python3.12",
+    "python3.11",
+    "python3.10",
+    "python3",
+  ];
+  let best = null;
+  for (const cmd of candidates) {
+    const available = await checkCommandAvailable(cmd);
+    if (!available) continue;
+    const version = await getCommandVersion(cmd);
+    if (!version) continue;
+    if (version.major < 3) continue;
+    if (!best) {
+      best = { cmd, version };
+      continue;
+    }
+    if (version.major > best.version.major) {
+      best = { cmd, version };
+    } else if (version.major === best.version.major && version.minor > best.version.minor) {
+      best = { cmd, version };
+    }
+  }
+  return best;
 }
 
 function getEnvPath(installDir) {
@@ -1859,15 +1889,14 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
     try {
       // Check prerequisites
       notice.setMessage("Prüfe Voraussetzungen...");
-      const hasPython3 = await checkCommandAvailable("python3");
-      if (!hasPython3) {
+      const pythonInfo = await findPythonCommand();
+      if (!pythonInfo) {
         throw new Error("Python 3 ist nicht installiert oder nicht im PATH. Bitte installiere Python 3.11+ (z.B. via Homebrew: brew install python@3.11).");
       }
-
-      const pythonVersion = await getPython3Version();
-      if (!pythonVersion || pythonVersion.major < 3 || (pythonVersion.major === 3 && pythonVersion.minor < 11)) {
-        throw new Error(`Python 3.11+ wird benötigt, aber gefunden: ${pythonVersion ? `Python ${pythonVersion.major}.${pythonVersion.minor}` : "unbekannt"}. Bitte installiere Python 3.11+ (z.B. via Homebrew: brew install python@3.11).`);
+      if (pythonInfo.version.major < 3 || (pythonInfo.version.major === 3 && pythonInfo.version.minor < 11)) {
+        throw new Error(`Python 3.11+ wird benötigt, aber gefunden: ${pythonInfo.version.raw}. Bitte installiere Python 3.11+ (z.B. via Homebrew: brew install python@3.11).`);
       }
+      const pythonCmd = pythonInfo.cmd;
 
       const hasFfmpeg = await checkCommandAvailable("ffmpeg");
       if (!hasFfmpeg) {
@@ -1906,7 +1935,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
       }
 
       notice.setMessage("Python-Umgebung wird erstellt...");
-      await execPromise(`python3 -m venv "${path.join(installDir, ".venv")}"`, { cwd: installDir });
+      await execPromise(`${pythonCmd} -m venv "${path.join(installDir, ".venv")}"`, { cwd: installDir });
 
       notice.setMessage("Backend-Abhängigkeiten werden installiert (das kann einige Minuten dauern)...");
       const pip = path.join(installDir, ".venv", "bin", "pip");
