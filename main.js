@@ -2059,7 +2059,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
   // ── Backend Communication ────────────────────────────────────────────────
 
   async ensureBackendAvailable(options = {}) {
-    const { forceStart = false } = options;
+    const { forceStart = true } = options;
     try {
       return await this.fetchBackendHealth();
     } catch (error) {
@@ -2114,6 +2114,9 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
       throw new Error("Backend-Installation scheint beschädigt zu sein. Versuche eine Neuinstallation über die Plugin-Einstellungen.");
     }
 
+    // Ensure log file exists before spawning
+    fs.writeFileSync(logPath, `\n--- Backend started at ${new Date().toISOString()} ---\n`, { flag: "a" });
+
     const args = ["serve", "--host", "127.0.0.1", "--port", "8765"];
     const child = spawn(executable, args, {
       cwd: installDir,
@@ -2125,8 +2128,6 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
 
     // Collect stdout/stderr into log file and memory buffer
     const logStream = fs.createWriteStream(logPath, { flags: "a" });
-    logStream.write(`\n--- Backend started at ${new Date().toISOString()} (PID: ${child.pid}) ---\n`);
-
     const logBuffer = [];
     const appendLog = (data) => {
       const text = data.toString();
@@ -2152,9 +2153,9 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
 
     const timeoutMs = 30000;
     const startedAt = Date.now();
-    while (Date.now() - startedAt < timeoutMs) {
-      await new Promise((resolve) => window.setTimeout(resolve, 750));
 
+    // Check immediately, then every 750ms
+    do {
       if (exitError) {
         logStream.end();
         const recentLog = logBuffer.slice(-20).join("");
@@ -2168,7 +2169,11 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
       } catch (_error) {
         // wait until backend responds or timeout expires
       }
-    }
+
+      if (Date.now() - startedAt < timeoutMs) {
+        await new Promise((resolve) => window.setTimeout(resolve, 750));
+      }
+    } while (Date.now() - startedAt < timeoutMs);
 
     logStream.end();
     const recentLog = logBuffer.slice(-20).join("");
