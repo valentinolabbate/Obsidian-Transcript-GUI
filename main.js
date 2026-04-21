@@ -101,6 +101,31 @@ function normalizeSettings(data) {
   return settings;
 }
 
+function stripWrappedQuotes(value) {
+  return String(value || "").trim().replace(/^['"]|['"]$/g, "");
+}
+
+function extractWikiLinkTarget(value) {
+  const match = String(value || "").match(/\[\[(.+?)\]\]/);
+  return match ? match[1].trim() : stripWrappedQuotes(value);
+}
+
+function parseTranscriptStem(fileName) {
+  const stem = String(fileName || "")
+    .replace(/\.transcript\.md$/i, "")
+    .replace(/\.segments\.json$/i, "")
+    .trim();
+  const parts = stem.split(" – ").map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 3) {
+    return { date: "", sessionType: "", theme: "" };
+  }
+  return {
+    date: parts[0],
+    sessionType: parts[1],
+    theme: parts.slice(2).join(" – "),
+  };
+}
+
 class AudioFileSuggestModal extends FuzzySuggestModal {
   constructor(app, files, onChoose) {
     super(app);
@@ -122,14 +147,38 @@ class AudioFileSuggestModal extends FuzzySuggestModal {
   }
 }
 
+class TranscriptFileSuggestModal extends FuzzySuggestModal {
+  constructor(app, files, onChoose) {
+    super(app);
+    this.files = files;
+    this.onChoose = onChoose;
+    this.setPlaceholder("Transkript-Datei waehlen...");
+  }
+
+  getItems() {
+    return this.files;
+  }
+
+  getItemText(file) {
+    return file.path;
+  }
+
+  onChooseItem(file) {
+    this.onChoose(file);
+  }
+}
+
 class TranscriptProcessModal extends Modal {
   constructor(app, plugin, initialAudioPath = "") {
     super(app);
     const inferredCourse = plugin.guessCourseFromContext();
     const latestInboxAudio = plugin.getLatestInboxAudio();
+    const activeTranscript = plugin.getActiveTranscriptFile();
     this.plugin = plugin;
     this.state = {
+      sourceMode: initialAudioPath ? "audio" : activeTranscript ? "transcript" : "audio",
       audioPath: initialAudioPath || (latestInboxAudio ? latestInboxAudio.path : ""),
+      transcriptPath: activeTranscript ? activeTranscript.path : "",
       course: inferredCourse || plugin.settings.courseOptions[0] || "",
       date: window.moment ? window.moment().format("YYYY-MM-DD") : new Date().toISOString().slice(0, 10),
       sessionType: plugin.getSessionProfile(plugin.settings.defaultSessionType)?.name || plugin.getSessionProfiles()[0]?.name || "Vorlesung",
@@ -148,6 +197,8 @@ class TranscriptProcessModal extends Modal {
     this.progressStageEl = null;
     this.progressMessageEl = null;
     this.pollToken = 0;
+    this.lastTranscriptAutofillPath = "";
+    this.isAutofillingTranscript = false;
     this.progressSnapshot = { progress: 0, stage: "idle", message: "Noch kein Job aktiv.", status: "idle" };
   }
 
@@ -170,6 +221,7 @@ class TranscriptProcessModal extends Modal {
     const badgeRowEl = heroEl.createDiv({ cls: "transcript-gui-badges" });
     this.createBadge(badgeRowEl, this.state.course ? this.state.course.replaceAll("_", " ") : "Kein Kontext", "Kontext");
     this.createBadge(badgeRowEl, this.state.sessionType, "Typ");
+    this.createBadge(badgeRowEl, this.state.sourceMode === "audio" ? "Audio" : "Transkript", "Quelle");
     this.createBadge(badgeRowEl, this.plugin.settings.inboxFolder, "Inbox");
 
     const lastRun = this.plugin.settings.lastRun;
@@ -196,40 +248,80 @@ class TranscriptProcessModal extends Modal {
 
     const formEl = shellEl.createDiv({ cls: "transcript-gui-form" });
 
-    const audioSectionEl = this.createSection(
+    const sourceSectionEl = this.createSection(
       formEl,
-      "Audioquelle",
-      "Waehle eine Aufnahme aus der Inbox oder einem anderen Pfad im Vault."
+      "Quelle",
+      "Waehle eine Audio-Datei oder ein vorhandenes Rohtranskript aus dem Vault."
     );
-    const audioFieldEl = this.createField(audioSectionEl, "Audio-Datei", "Pfad relativ zum Vault");
-    const audioInputEl = audioFieldEl.createEl("input", { cls: "transcript-gui-input" });
-    audioInputEl.type = "text";
-    audioInputEl.placeholder = "99_Inbox/Audio/datei.m4a";
-    audioInputEl.value = this.state.audioPath;
-    audioInputEl.addEventListener("input", (event) => {
-      this.state.audioPath = event.target.value.trim();
+    const sourceModeFieldEl = this.createField(sourceSectionEl, "Quelltyp");
+    const sourceModeSelectEl = sourceModeFieldEl.createEl("select", { cls: "transcript-gui-select" });
+    [
+      { value: "audio", label: "Audio-Datei" },
+      { value: "transcript", label: "Fertiges Transkript" },
+    ].forEach((option) => {
+      const optionEl = sourceModeSelectEl.createEl("option", { text: option.label, value: option.value });
+      optionEl.value = option.value;
     });
-
-    const audioActionsEl = audioSectionEl.createDiv({ cls: "transcript-gui-inline-actions" });
-    this.createActionButton(audioActionsEl, "Neueste Inbox-Datei", async () => {
-      const latest = this.plugin.getLatestInboxAudio();
-      if (!latest) {
-        new Notice("Keine Audio-Datei in der Inbox gefunden.");
-        return;
-      }
-      this.state.audioPath = latest.path;
+    sourceModeSelectEl.value = this.state.sourceMode;
+    sourceModeSelectEl.addEventListener("change", (event) => {
+      this.state.sourceMode = event.target.value;
       this.onOpen();
     });
-    this.createActionButton(audioActionsEl, "Neueste direkt starten", async () => {
-      const latest = this.plugin.getLatestInboxAudio();
-      if (!latest) {
-        new Notice("Keine Audio-Datei in der Inbox gefunden.");
-        return;
-      }
-      this.state.audioPath = latest.path;
-      await this.submit();
-    });
-    this.createActionButton(audioActionsEl, "Im Vault waehlen", () => this.chooseAudioFile());
+
+    if (this.state.sourceMode === "audio") {
+      const audioFieldEl = this.createField(sourceSectionEl, "Audio-Datei", "Pfad relativ zum Vault");
+      const audioInputEl = audioFieldEl.createEl("input", { cls: "transcript-gui-input" });
+      audioInputEl.type = "text";
+      audioInputEl.placeholder = "99_Inbox/Audio/datei.m4a";
+      audioInputEl.value = this.state.audioPath;
+      audioInputEl.addEventListener("input", (event) => {
+        this.state.audioPath = event.target.value.trim();
+      });
+
+      const audioActionsEl = sourceSectionEl.createDiv({ cls: "transcript-gui-inline-actions" });
+      this.createActionButton(audioActionsEl, "Neueste Inbox-Datei", async () => {
+        const latest = this.plugin.getLatestInboxAudio();
+        if (!latest) {
+          new Notice("Keine Audio-Datei in der Inbox gefunden.");
+          return;
+        }
+        this.state.audioPath = latest.path;
+        this.onOpen();
+      });
+      this.createActionButton(audioActionsEl, "Neueste direkt starten", async () => {
+        const latest = this.plugin.getLatestInboxAudio();
+        if (!latest) {
+          new Notice("Keine Audio-Datei in der Inbox gefunden.");
+          return;
+        }
+        this.state.audioPath = latest.path;
+        await this.submit();
+      });
+      this.createActionButton(audioActionsEl, "Im Vault waehlen", () => this.chooseAudioFile());
+    } else {
+      const transcriptFieldEl = this.createField(sourceSectionEl, "Transkript-Datei", "Pfad zu .transcript.md oder .segments.json");
+      const transcriptInputEl = transcriptFieldEl.createEl("input", { cls: "transcript-gui-input" });
+      transcriptInputEl.type = "text";
+      transcriptInputEl.placeholder = "10_Studium/.../Rohdaten/Transkripte/datei.transcript.md";
+      transcriptInputEl.value = this.state.transcriptPath;
+      transcriptInputEl.addEventListener("input", (event) => {
+        this.state.transcriptPath = event.target.value.trim();
+      });
+
+      const transcriptActionsEl = sourceSectionEl.createDiv({ cls: "transcript-gui-inline-actions" });
+      this.createActionButton(transcriptActionsEl, "Aktuelle Note nutzen", async () => {
+        const activeTranscriptFile = this.plugin.getActiveTranscriptFile();
+        if (!activeTranscriptFile) {
+          new Notice("Aktive Datei ist kein unterstuetztes Rohtranskript.");
+          return;
+        }
+        await this.autofillFromTranscriptPath(activeTranscriptFile.path, { showNotice: true });
+      });
+      this.createActionButton(transcriptActionsEl, "Im Vault waehlen", () => this.chooseTranscriptFile());
+      this.createActionButton(transcriptActionsEl, "Metadaten laden", async () => {
+        await this.autofillFromTranscriptPath(this.state.transcriptPath, { showNotice: true });
+      });
+    }
 
     const detailsGridEl = formEl.createDiv({ cls: "transcript-gui-grid" });
     const detailsSectionEl = this.createSection(
@@ -343,6 +435,10 @@ class TranscriptProcessModal extends Modal {
     this.statusEl = footerEl.createDiv({ cls: "transcript-gui-status" });
     this.setStatus(this.statusMessage, this.statusKind);
     this.setProgress(this.progressSnapshot);
+
+    if (this.state.sourceMode === "transcript" && this.state.transcriptPath && !this.isAutofillingTranscript && this.state.transcriptPath !== this.lastTranscriptAutofillPath) {
+      void this.autofillFromTranscriptPath(this.state.transcriptPath);
+    }
   }
 
   onClose() {
@@ -452,6 +548,65 @@ class TranscriptProcessModal extends Modal {
     }).open();
   }
 
+  async chooseTranscriptFile() {
+    const transcriptFiles = this.plugin.getAllTranscriptFiles();
+    if (transcriptFiles.length === 0) {
+      new Notice("Keine unterstuetzten Transkript-Dateien im Vault gefunden.");
+      return;
+    }
+    new TranscriptFileSuggestModal(this.app, transcriptFiles, async (file) => {
+      await this.autofillFromTranscriptPath(file.path, { showNotice: true });
+    }).open();
+  }
+
+  async autofillFromTranscriptPath(pathLike, options = {}) {
+    const { showNotice = false } = options;
+    const transcriptPath = String(pathLike || "").trim();
+    if (!transcriptPath) {
+      return;
+    }
+    this.isAutofillingTranscript = true;
+    this.lastTranscriptAutofillPath = transcriptPath;
+    try {
+      const metadata = await this.plugin.readTranscriptMetadata(transcriptPath);
+      const hasMetadata = Boolean(metadata && (metadata.course || metadata.date || metadata.sessionType || metadata.theme));
+      this.state.transcriptPath = transcriptPath;
+      let changed = false;
+
+      if (metadata?.course && metadata.course !== this.state.course) {
+        this.state.course = metadata.course;
+        changed = true;
+      }
+      if (metadata?.date && metadata.date !== this.state.date) {
+        this.state.date = metadata.date;
+        changed = true;
+      }
+      if (metadata?.theme && metadata.theme !== this.state.theme) {
+        this.state.theme = metadata.theme;
+        changed = true;
+      }
+      if (metadata?.sessionType && this.plugin.getSessionProfiles().some((profile) => profile.name === metadata.sessionType) && metadata.sessionType !== this.state.sessionType) {
+        this.state.sessionType = metadata.sessionType;
+        changed = true;
+      }
+
+      if (showNotice) {
+        new Notice(hasMetadata ? "Metadaten aus dem Rohtranskript uebernommen." : "Transkript gewaehlt. Keine Metadaten erkannt.");
+      }
+
+      if (changed || showNotice) {
+        this.onOpen();
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (showNotice) {
+        new Notice(`Transkript-Metadaten konnten nicht geladen werden: ${message}`);
+      }
+    } finally {
+      this.isAutofillingTranscript = false;
+    }
+  }
+
   setStatus(message, kind = "neutral") {
     this.statusMessage = message;
     this.statusKind = kind;
@@ -508,6 +663,7 @@ class TranscriptProcessModal extends Modal {
     const labels = {
       queued: "Warteschlange",
       ingest: "Audio uebernehmen",
+      transcript_load: "Transkript laden",
       preprocess: "Vorverarbeitung",
       transcription: "Transkription",
       diarization: "Speaker-Erkennung",
@@ -523,8 +679,11 @@ class TranscriptProcessModal extends Modal {
   }
 
   validate() {
-    if (!this.state.audioPath) {
+    if (this.state.sourceMode === "audio" && !this.state.audioPath) {
       throw new Error("Bitte eine Audio-Datei angeben.");
+    }
+    if (this.state.sourceMode === "transcript" && !this.state.transcriptPath) {
+      throw new Error("Bitte eine Transkript-Datei angeben.");
     }
     if (!this.state.course) {
       throw new Error("Bitte einen Kontext angeben.");
@@ -554,7 +713,6 @@ class TranscriptProcessModal extends Modal {
     const currentPollToken = ++this.pollToken;
 
     const payload = {
-      audio_path: this.state.audioPath,
       course: this.state.course,
       date: this.state.date,
       session_type: this.state.sessionType,
@@ -563,6 +721,11 @@ class TranscriptProcessModal extends Modal {
       storage_dir: this.plugin.getSessionProfile(this.state.sessionType)?.storageDir || undefined,
       output_dir: this.plugin.getSessionProfile(this.state.sessionType)?.outputDir || undefined,
     };
+    if (this.state.sourceMode === "audio") {
+      payload.audio_path = this.state.audioPath;
+    } else {
+      payload.transcript_path = this.state.transcriptPath;
+    }
 
     try {
       const result = await this.plugin.runLectureJob(payload, (snapshot) => {
@@ -581,7 +744,7 @@ class TranscriptProcessModal extends Modal {
         status: "completed",
         notePath: result.note_path,
         transcriptPath: result.transcript_path,
-        audioPath: this.state.audioPath,
+        audioPath: this.state.sourceMode === "audio" ? this.state.audioPath : null,
         course: this.state.course,
         sessionType: this.state.sessionType,
         theme: this.state.theme,
@@ -604,7 +767,7 @@ class TranscriptProcessModal extends Modal {
         timestamp: new Date().toISOString(),
         status: "failed",
         error: message,
-        audioPath: this.state.audioPath,
+        audioPath: this.state.sourceMode === "audio" ? this.state.audioPath : null,
         course: this.state.course,
         sessionType: this.state.sessionType,
         theme: this.state.theme,
@@ -1001,6 +1164,97 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
       const extension = file.extension?.toLowerCase();
       return AUDIO_EXTENSIONS.has(extension);
     });
+  }
+
+  isTranscriptFile(file) {
+    return Boolean(file?.path?.endsWith(".transcript.md") || file?.path?.endsWith(".segments.json"));
+  }
+
+  getAllTranscriptFiles() {
+    return this.app.vault.getFiles().filter((file) => this.isTranscriptFile(file));
+  }
+
+  getActiveTranscriptFile() {
+    const activeFile = this.app.workspace.getActiveFile();
+    return this.isTranscriptFile(activeFile) ? activeFile : null;
+  }
+
+  inferContextFromTranscriptPath(pathLike) {
+    const parts = String(pathLike || "").split("/").filter(Boolean);
+    const rawIndex = parts.indexOf("Rohdaten");
+    if (rawIndex > 0) {
+      return parts[rawIndex - 1];
+    }
+    for (const course of this.settings.courseOptions) {
+      if (parts.includes(course)) {
+        return course;
+      }
+    }
+    return "";
+  }
+
+  extractFrontmatterValue(text, key) {
+    const frontmatterMatch = String(text || "").match(/^---\n([\s\S]*?)\n---/);
+    if (!frontmatterMatch) {
+      return "";
+    }
+    const fieldMatch = frontmatterMatch[1].match(new RegExp(`^${key}:\\s*(.+)$`, "m"));
+    return fieldMatch ? stripWrappedQuotes(fieldMatch[1]) : "";
+  }
+
+  async readTranscriptMetadata(pathLike) {
+    const normalizedPath = normalizePath(String(pathLike || "").trim());
+    if (!normalizedPath) {
+      return null;
+    }
+
+    const sourceFile = this.app.vault.getAbstractFileByPath(normalizedPath);
+    if (!sourceFile || sourceFile.children) {
+      return null;
+    }
+
+    const stemMetadata = parseTranscriptStem(sourceFile.name);
+    let transcriptFile = sourceFile;
+    if (sourceFile.path.endsWith(".segments.json")) {
+      const siblingPath = normalizePath(sourceFile.path.replace(/\.segments\.json$/i, ".transcript.md"));
+      const siblingFile = this.app.vault.getAbstractFileByPath(siblingPath);
+      if (siblingFile && !siblingFile.children) {
+        transcriptFile = siblingFile;
+      }
+    }
+
+    const metadata = {
+      course: this.inferContextFromTranscriptPath(transcriptFile.path || normalizedPath),
+      date: stemMetadata.date,
+      sessionType: stemMetadata.sessionType,
+      theme: stemMetadata.theme,
+    };
+
+    if (transcriptFile.path.endsWith(".transcript.md")) {
+      const text = await this.app.vault.cachedRead(transcriptFile);
+      const kursLink = this.extractFrontmatterValue(text, "KursLink");
+      const kurs = this.extractFrontmatterValue(text, "Kurs");
+      const datum = this.extractFrontmatterValue(text, "Datum");
+      const sitzungstyp = this.extractFrontmatterValue(text, "Sitzungstyp");
+      const thema = this.extractFrontmatterValue(text, "Thema");
+
+      if (kursLink) {
+        metadata.course = extractWikiLinkTarget(kursLink);
+      } else if (kurs) {
+        metadata.course = kurs;
+      }
+      if (datum) {
+        metadata.date = datum;
+      }
+      if (sitzungstyp) {
+        metadata.sessionType = sitzungstyp;
+      }
+      if (thema) {
+        metadata.theme = thema;
+      }
+    }
+
+    return metadata;
   }
 
   getLatestInboxAudio() {
