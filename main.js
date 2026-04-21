@@ -1079,6 +1079,7 @@ class TranscriptProcessModal extends Modal {
     this.setProgress({ progress: 0, stage: "queued", message: "Job wird an das Backend gesendet.", status: "queued" });
     const currentPollToken = ++this.pollToken;
 
+    const promptProfile = this.plugin.getPromptProfile(this.state.promptProfile);
     const payload = {
       course: this.state.course,
       date: this.state.date,
@@ -1089,6 +1090,17 @@ class TranscriptProcessModal extends Modal {
       storage_dir: this.plugin.getSessionProfile(this.state.sessionType)?.storageDir || undefined,
       output_dir: this.plugin.getSessionProfile(this.state.sessionType)?.outputDir || undefined,
     };
+    if (promptProfile) {
+      if (promptProfile.lmStudioModel) {
+        payload.lm_studio_model = promptProfile.lmStudioModel;
+      }
+      if (promptProfile.temperature != null) {
+        payload.temperature = promptProfile.temperature;
+      }
+      if (promptProfile.topP != null) {
+        payload.top_p = promptProfile.topP;
+      }
+    }
     if (this.state.sourceMode === "audio") {
       payload.audio_path = this.state.audioPath;
     } else {
