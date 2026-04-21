@@ -1,33 +1,354 @@
+.transcript-gui-modal-host {
+  --transcript-gui-radius-xl: 24px;
+  --transcript-gui-radius-lg: 18px;
+  --transcript-gui-radius-md: 14px;
+}
+
+.transcript-gui-modal-host .modal {
+  width: min(920px, calc(100vw - 3rem));
+  max-width: 920px;
+  border-radius: var(--transcript-gui-radius-xl);
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 78%, transparent);
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--interactive-accent) 12%, transparent), transparent 38%),
+    linear-gradient(180deg, color-mix(in srgb, var(--background-secondary) 88%, transparent), var(--background-primary));
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+  overflow: hidden;
+}
+
+.transcript-gui-modal-host .modal-content {
+  padding: 0;
+}
+
+.transcript-gui-modal {
+  padding: 1.25rem;
+}
+
+.transcript-gui-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.transcript-gui-hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.35rem;
+  border-radius: var(--transcript-gui-radius-xl);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--interactive-accent) 15%, var(--background-secondary)), var(--background-secondary-alt));
+  border: 1px solid color-mix(in srgb, var(--interactive-accent) 18%, var(--background-modifier-border));
+}
+
+.transcript-gui-hero-copy {
+  flex: 1 1 380px;
+}
+
+.transcript-gui-hero-copy h2 {
+  margin: 0;
+  font-size: clamp(1.45rem, 1.1rem + 1vw, 2rem);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+.transcript-gui-hero-copy p {
+  margin: 0.55rem 0 0;
+  color: var(--text-muted);
+  max-width: 58ch;
+  line-height: 1.45;
+}
+
+.transcript-gui-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: flex-start;
+  justify-content: flex-end;
+  flex: 0 1 280px;
+}
+
+.transcript-gui-badge {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 110px;
+  padding: 0.75rem 0.9rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background-primary) 76%, transparent);
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 72%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.transcript-gui-badge-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+
+.transcript-gui-badge-value {
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.transcript-gui-run-summary,
+.transcript-gui-section,
+.transcript-gui-status {
+  border-radius: var(--transcript-gui-radius-lg);
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 82%, transparent);
+  background: color-mix(in srgb, var(--background-secondary) 82%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.transcript-gui-run-summary {
+  padding: 0.95rem 1.1rem;
+}
+
+.transcript-gui-run-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 0.45rem;
+}
+
+.transcript-gui-run-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.transcript-gui-run-meta span {
+  padding: 0.3rem 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background-primary) 70%, transparent);
+  color: var(--text-normal);
+  font-size: 0.82rem;
+}
+
+.transcript-gui-run-path {
+  margin-top: 0.65rem;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  word-break: break-word;
+}
+
+.transcript-gui-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.transcript-gui-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: 1rem;
+}
+
+.transcript-gui-section {
+  padding: 1rem 1.05rem 1.05rem;
+}
+
+.transcript-gui-section-heading {
+  margin-bottom: 0.9rem;
+}
+
+.transcript-gui-section-heading h3 {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.transcript-gui-section-heading p {
+  margin: 0.35rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.transcript-gui-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.transcript-gui-field + .transcript-gui-field,
+.transcript-gui-field + .transcript-gui-inline-actions,
+.transcript-gui-inline-actions + .transcript-gui-field,
+.transcript-gui-meta-grid,
+.transcript-gui-info-card {
+  margin-top: 0.95rem;
+}
+
+.transcript-gui-label {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text-normal);
+}
+
+.transcript-gui-field-description {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: -0.2rem;
+}
+
+.transcript-gui-input,
+.transcript-gui-select {
+  width: 100%;
+  min-height: 46px;
+  padding: 0.8rem 0.9rem;
+  border-radius: var(--transcript-gui-radius-md);
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 88%, transparent);
+  background: color-mix(in srgb, var(--background-primary) 86%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.transcript-gui-input:focus,
+.transcript-gui-select:focus {
+  border-color: color-mix(in srgb, var(--interactive-accent) 78%, var(--background-modifier-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 16%, transparent);
+  outline: none;
+}
+
+.transcript-gui-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.transcript-gui-inline-actions,
 .transcript-gui-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
-  margin-top: 1rem;
+}
+
+.transcript-gui-secondary-button,
+.transcript-gui-actions button {
+  min-height: 42px;
+  padding: 0.75rem 1rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 85%, transparent);
+  background: color-mix(in srgb, var(--background-primary) 80%, transparent);
+  font-weight: 600;
+  transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.transcript-gui-secondary-button:hover,
+.transcript-gui-actions button:hover {
+  border-color: color-mix(in srgb, var(--interactive-accent) 34%, var(--background-modifier-border));
+  transform: translateY(-1px);
 }
 
 .transcript-gui-actions .mod-cta {
   min-width: 180px;
+  background: linear-gradient(135deg, var(--interactive-accent), color-mix(in srgb, var(--interactive-accent) 72%, white));
+  color: var(--text-on-accent);
+  border: none;
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--interactive-accent) 22%, transparent);
+}
+
+.transcript-gui-actions .mod-cta:hover {
+  transform: translateY(-1px) scale(1.01);
+}
+
+.transcript-gui-info-card {
+  padding: 0.9rem 0.95rem;
+  border-radius: var(--transcript-gui-radius-md);
+  background: color-mix(in srgb, var(--background-primary) 58%, transparent);
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 75%, transparent);
+}
+
+.transcript-gui-info-title {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}
+
+.transcript-gui-info-line,
+.transcript-gui-hint {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.transcript-gui-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
 }
 
 .transcript-gui-status {
-  margin-top: 1rem;
-  padding: 0.75rem 0.9rem;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 10px;
-  background: var(--background-secondary);
+  padding: 0.9rem 1rem;
   white-space: pre-wrap;
+  line-height: 1.45;
+  word-break: break-word;
 }
 
 .transcript-gui-status.is-error {
-  border-color: var(--color-red);
+  border-color: color-mix(in srgb, var(--color-red) 56%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--color-red) 8%, var(--background-secondary));
 }
 
 .transcript-gui-status.is-success {
-  border-color: var(--color-green);
+  border-color: color-mix(in srgb, var(--color-green) 48%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--color-green) 8%, var(--background-secondary));
 }
 
-.transcript-gui-hint {
-  margin-top: 0.5rem;
-  color: var(--text-muted);
-  font-size: var(--font-ui-small);
+.transcript-gui-modal-host button:disabled,
+.transcript-gui-modal-host input:disabled,
+.transcript-gui-modal-host select:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+@media (max-width: 900px) {
+  .transcript-gui-modal-host .modal {
+    width: min(100vw - 1.5rem, 760px);
+  }
+
+  .transcript-gui-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .transcript-gui-modal {
+    padding: 0.8rem;
+  }
+
+  .transcript-gui-hero,
+  .transcript-gui-section,
+  .transcript-gui-run-summary,
+  .transcript-gui-status {
+    border-radius: 16px;
+  }
+
+  .transcript-gui-badges {
+    justify-content: flex-start;
+  }
+
+  .transcript-gui-meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .transcript-gui-inline-actions,
+  .transcript-gui-actions {
+    flex-direction: column;
+  }
+
+  .transcript-gui-actions .mod-cta,
+  .transcript-gui-secondary-button,
+  .transcript-gui-actions button {
+    width: 100%;
+  }
 }

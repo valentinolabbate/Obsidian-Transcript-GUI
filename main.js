@@ -67,127 +67,156 @@ class TranscriptProcessModal extends Modal {
     this.statusKind = "neutral";
     this.submitButtonEl = null;
     this.cancelButtonEl = null;
+    this.actionButtons = [];
+    this.courseListId = `transcript-gui-course-list-${Date.now()}`;
   }
 
   onOpen() {
+    this.modalEl.addClass("transcript-gui-modal-host");
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("transcript-gui-modal");
-    contentEl.createEl("h2", { text: "Vorlesungstranskript importieren" });
+    this.actionButtons = [];
+
+    const shellEl = contentEl.createDiv({ cls: "transcript-gui-shell" });
+    const heroEl = shellEl.createDiv({ cls: "transcript-gui-hero" });
+    const heroTextEl = heroEl.createDiv({ cls: "transcript-gui-hero-copy" });
+    heroTextEl.createEl("h2", { text: "Vorlesungstranskript importieren" });
+    heroTextEl.createEl("p", {
+      text: "Audio uebernehmen, Vorlesungsmetadaten setzen und die lokale Pipeline direkt aus Obsidian starten.",
+    });
+
+    const badgeRowEl = heroEl.createDiv({ cls: "transcript-gui-badges" });
+    this.createBadge(badgeRowEl, this.state.course ? this.state.course.replaceAll("_", " ") : "Kein Kurs", "Kurs");
+    this.createBadge(badgeRowEl, this.state.sessionType, "Typ");
+    this.createBadge(badgeRowEl, this.plugin.settings.inboxFolder, "Inbox");
 
     const lastRun = this.plugin.settings.lastRun;
     if (lastRun) {
       const lastRunClass = lastRun.status === "failed" ? "transcript-gui-status is-error" : "transcript-gui-status is-success";
-      const lastRunEl = contentEl.createDiv({ cls: lastRunClass });
-      lastRunEl.setText(
-        `Letzter Lauf: ${lastRun.timestamp || "unbekannt"}\nStatus: ${lastRun.status || "unbekannt"}\nNote: ${lastRun.notePath || "-"}`
-      );
+      const lastRunEl = shellEl.createDiv({ cls: `transcript-gui-run-summary ${lastRunClass}` });
+      lastRunEl.createEl("div", { cls: "transcript-gui-run-title", text: "Letzter Lauf" });
+      const metaEl = lastRunEl.createDiv({ cls: "transcript-gui-run-meta" });
+      metaEl.createSpan({ text: lastRun.timestamp || "unbekannt" });
+      metaEl.createSpan({ text: lastRun.status || "unbekannt" });
+      if (lastRun.course) {
+        metaEl.createSpan({ text: lastRun.course.replaceAll("_", " ") });
+      }
+      if (lastRun.notePath) {
+        lastRunEl.createDiv({ cls: "transcript-gui-run-path", text: lastRun.notePath });
+      }
+      if (lastRun.error) {
+        lastRunEl.createDiv({ cls: "transcript-gui-run-path", text: lastRun.error });
+      }
     }
 
-    new Setting(contentEl)
-      .setName("Audio-Datei")
-      .setDesc("Pfad relativ zum Vault. Die Pipeline kopiert die Datei spaeter in den Kursordner.")
-      .addText((text) => {
-        text.setPlaceholder("99_Inbox/Audio/datei.m4a");
-        text.setValue(this.state.audioPath);
-        text.onChange((value) => {
-          this.state.audioPath = value.trim();
-        });
-      })
-      .addButton((button) => {
-        button.setButtonText("Neueste Inbox-Datei");
-        button.onClick(async () => {
-          const latest = this.plugin.getLatestInboxAudio();
-          if (!latest) {
-            new Notice("Keine Audio-Datei in der Inbox gefunden.");
-            return;
-          }
-          this.state.audioPath = latest.path;
-          this.onOpen();
-        });
-      })
-      .addButton((button) => {
-        button.setButtonText("Neueste direkt starten");
-        button.onClick(async () => {
-          const latest = this.plugin.getLatestInboxAudio();
-          if (!latest) {
-            new Notice("Keine Audio-Datei in der Inbox gefunden.");
-            return;
-          }
-          this.state.audioPath = latest.path;
-          await this.submit();
-        });
-      })
-      .addButton((button) => {
-        button.setButtonText("Im Vault waehlen");
-        button.onClick(() => this.chooseAudioFile());
-      });
+    const formEl = shellEl.createDiv({ cls: "transcript-gui-form" });
 
-    const courseSetting = new Setting(contentEl)
-      .setName("Kurs")
-      .setDesc("Ordnername des Kurses im Vault.");
-
-    courseSetting.addText((text) => {
-      text.setPlaceholder("Oekonometrie");
-      text.setValue(this.state.course);
-      text.onChange((value) => {
-        this.state.course = value.trim();
-      });
+    const audioSectionEl = this.createSection(
+      formEl,
+      "Audioquelle",
+      "Waehle eine Aufnahme aus der Inbox oder einem anderen Pfad im Vault."
+    );
+    const audioFieldEl = this.createField(audioSectionEl, "Audio-Datei", "Pfad relativ zum Vault");
+    const audioInputEl = audioFieldEl.createEl("input", { cls: "transcript-gui-input" });
+    audioInputEl.type = "text";
+    audioInputEl.placeholder = "99_Inbox/Audio/datei.m4a";
+    audioInputEl.value = this.state.audioPath;
+    audioInputEl.addEventListener("input", (event) => {
+      this.state.audioPath = event.target.value.trim();
     });
 
-    if (this.plugin.settings.courseOptions.length > 0) {
-      courseSetting.addDropdown((dropdown) => {
-        for (const course of this.plugin.settings.courseOptions) {
-          dropdown.addOption(course, course.replaceAll("_", " "));
-        }
-        dropdown.setValue(this.state.course || this.plugin.settings.courseOptions[0]);
-        dropdown.onChange((value) => {
-          this.state.course = value;
-          this.onOpen();
-        });
-      });
+    const audioActionsEl = audioSectionEl.createDiv({ cls: "transcript-gui-inline-actions" });
+    this.createActionButton(audioActionsEl, "Neueste Inbox-Datei", async () => {
+      const latest = this.plugin.getLatestInboxAudio();
+      if (!latest) {
+        new Notice("Keine Audio-Datei in der Inbox gefunden.");
+        return;
+      }
+      this.state.audioPath = latest.path;
+      this.onOpen();
+    });
+    this.createActionButton(audioActionsEl, "Neueste direkt starten", async () => {
+      const latest = this.plugin.getLatestInboxAudio();
+      if (!latest) {
+        new Notice("Keine Audio-Datei in der Inbox gefunden.");
+        return;
+      }
+      this.state.audioPath = latest.path;
+      await this.submit();
+    });
+    this.createActionButton(audioActionsEl, "Im Vault waehlen", () => this.chooseAudioFile());
+
+    const detailsGridEl = formEl.createDiv({ cls: "transcript-gui-grid" });
+    const detailsSectionEl = this.createSection(
+      detailsGridEl,
+      "Sitzungsdaten",
+      "Die Metadaten steuern Dateiname, Kurszuordnung und Note."
+    );
+    const contextSectionEl = this.createSection(
+      detailsGridEl,
+      "Kontext",
+      "Kurs wird nach Moeglichkeit aus der aktuellen Note erkannt und kann ueberschrieben werden."
+    );
+
+    const courseFieldEl = this.createField(contextSectionEl, "Kurs", "Ordnername im Vault");
+    const courseInputEl = courseFieldEl.createEl("input", { cls: "transcript-gui-input" });
+    courseInputEl.type = "text";
+    courseInputEl.placeholder = "Oekonometrie";
+    courseInputEl.value = this.state.course;
+    courseInputEl.setAttribute("list", this.courseListId);
+    courseInputEl.addEventListener("input", (event) => {
+      this.state.course = event.target.value.trim();
+    });
+    const courseListEl = contextSectionEl.createEl("datalist", { attr: { id: this.courseListId } });
+    for (const course of this.plugin.settings.courseOptions) {
+      const optionEl = courseListEl.createEl("option");
+      optionEl.value = course;
     }
 
-    new Setting(contentEl)
-      .setName("Datum")
-      .addText((text) => {
-        text.inputEl.type = "date";
-        text.setValue(this.state.date);
-        text.onChange((value) => {
-          this.state.date = value.trim();
-        });
-      });
+    const themeFieldEl = this.createField(contextSectionEl, "Thema", "Wird fuer Dateiname und Notiz verwendet");
+    const themeInputEl = themeFieldEl.createEl("input", { cls: "transcript-gui-input" });
+    themeInputEl.type = "text";
+    themeInputEl.placeholder = "Paneldaten und Fixed Effects";
+    themeInputEl.value = this.state.theme;
+    themeInputEl.addEventListener("input", (event) => {
+      this.state.theme = event.target.value.trim();
+    });
 
-    new Setting(contentEl)
-      .setName("Sitzungstyp")
-      .addDropdown((dropdown) => {
-        ["Vorlesung", "Uebung", "Tutorium"].forEach((type) => dropdown.addOption(type, type));
-        dropdown.setValue(this.state.sessionType);
-        dropdown.onChange((value) => {
-          this.state.sessionType = value;
-        });
-      });
+    const metaGridEl = detailsSectionEl.createDiv({ cls: "transcript-gui-meta-grid" });
+    const dateFieldEl = this.createField(metaGridEl, "Datum");
+    const dateInputEl = dateFieldEl.createEl("input", { cls: "transcript-gui-input" });
+    dateInputEl.type = "date";
+    dateInputEl.value = this.state.date;
+    dateInputEl.addEventListener("input", (event) => {
+      this.state.date = event.target.value.trim();
+    });
 
-    new Setting(contentEl)
-      .setName("Thema")
-      .setDesc("Wird fuer Dateiname und Notiz verwendet.")
-      .addText((text) => {
-        text.setPlaceholder("Paneldaten und Fixed Effects");
-        text.setValue(this.state.theme);
-        text.onChange((value) => {
-          this.state.theme = value.trim();
-        });
-      });
+    const typeFieldEl = this.createField(metaGridEl, "Sitzungstyp");
+    const typeSelectEl = typeFieldEl.createEl("select", { cls: "transcript-gui-select" });
+    ["Vorlesung", "Uebung", "Tutorium"].forEach((type) => {
+      const optionEl = typeSelectEl.createEl("option", { text: type, value: type });
+      optionEl.value = type;
+    });
+    typeSelectEl.value = this.state.sessionType;
+    typeSelectEl.addEventListener("change", (event) => {
+      this.state.sessionType = event.target.value;
+      this.onOpen();
+    });
 
-    if (this.state.course) {
-      const contextHint = contentEl.createDiv({ cls: "transcript-gui-hint" });
-      contextHint.setText(`Vorausgewaehlter Kurs: ${this.state.course.replaceAll("_", " ")}`);
-    }
+    const contextInfoEl = contextSectionEl.createDiv({ cls: "transcript-gui-info-card" });
+    contextInfoEl.createEl("div", { cls: "transcript-gui-info-title", text: "Erkannter Kontext" });
+    contextInfoEl.createEl("div", {
+      cls: "transcript-gui-info-line",
+      text: this.state.course ? `Vorausgewaehlter Kurs: ${this.state.course.replaceAll("_", " ")}` : "Kein Kurs aus dem Kontext erkannt",
+    });
+    contextInfoEl.createEl("div", {
+      cls: "transcript-gui-info-line",
+      text: `Backend: ${this.plugin.settings.backendUrl}`,
+    });
 
-    const hintEl = contentEl.createDiv({ cls: "transcript-gui-hint" });
-    hintEl.setText(`Backend: ${this.plugin.settings.backendUrl}`);
-
-    const actionsEl = contentEl.createDiv({ cls: "transcript-gui-actions" });
+    const footerEl = shellEl.createDiv({ cls: "transcript-gui-footer" });
+    const actionsEl = footerEl.createDiv({ cls: "transcript-gui-actions" });
     this.submitButtonEl = actionsEl.createEl("button", { text: this.isSubmitting ? "Verarbeite..." : "Pipeline starten", cls: "mod-cta" });
     this.submitButtonEl.disabled = this.isSubmitting;
     this.submitButtonEl.addEventListener("click", () => this.submit());
@@ -196,8 +225,46 @@ class TranscriptProcessModal extends Modal {
     this.cancelButtonEl.disabled = this.isSubmitting;
     this.cancelButtonEl.addEventListener("click", () => this.close());
 
-    this.statusEl = contentEl.createDiv({ cls: "transcript-gui-status" });
+    this.statusEl = footerEl.createDiv({ cls: "transcript-gui-status" });
     this.setStatus(this.statusMessage, this.statusKind);
+  }
+
+  onClose() {
+    this.modalEl.removeClass("transcript-gui-modal-host");
+    this.contentEl.empty();
+  }
+
+  createSection(parentEl, title, description = "") {
+    const sectionEl = parentEl.createDiv({ cls: "transcript-gui-section" });
+    const headingEl = sectionEl.createDiv({ cls: "transcript-gui-section-heading" });
+    headingEl.createEl("h3", { text: title });
+    if (description) {
+      headingEl.createEl("p", { text: description });
+    }
+    return sectionEl;
+  }
+
+  createField(parentEl, label, description = "") {
+    const fieldEl = parentEl.createDiv({ cls: "transcript-gui-field" });
+    fieldEl.createEl("label", { cls: "transcript-gui-label", text: label });
+    if (description) {
+      fieldEl.createEl("div", { cls: "transcript-gui-field-description", text: description });
+    }
+    return fieldEl;
+  }
+
+  createBadge(parentEl, value, label) {
+    const badgeEl = parentEl.createDiv({ cls: "transcript-gui-badge" });
+    badgeEl.createSpan({ cls: "transcript-gui-badge-label", text: label });
+    badgeEl.createSpan({ cls: "transcript-gui-badge-value", text: value });
+    return badgeEl;
+  }
+
+  createActionButton(parentEl, text, onClick) {
+    const buttonEl = parentEl.createEl("button", { text, cls: "transcript-gui-secondary-button" });
+    buttonEl.addEventListener("click", onClick);
+    this.actionButtons.push(buttonEl);
+    return buttonEl;
   }
 
   async chooseAudioFile() {
@@ -231,6 +298,9 @@ class TranscriptProcessModal extends Modal {
 
   setBusy(isBusy) {
     this.isSubmitting = isBusy;
+    for (const buttonEl of this.actionButtons) {
+      buttonEl.disabled = isBusy;
+    }
     if (this.submitButtonEl) {
       this.submitButtonEl.disabled = isBusy;
       this.submitButtonEl.textContent = isBusy ? "Verarbeite..." : "Pipeline starten";
