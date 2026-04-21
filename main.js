@@ -46,6 +46,36 @@ const DEFAULT_SESSION_PROFILES = [
   },
 ];
 
+const DEFAULT_PROMPT_PROFILES = [
+  {
+    id: "vorlesung",
+    name: "Vorlesung",
+    zusammenfassungs_stil: "Du analysierst deutsche Vorlesungstranskripte fuer Obsidian-Notizen. Arbeite streng quellennah. Erfinde nichts. Speaker 1 ist wahrscheinlich die dozierende Person. Ignoriere irrelevanten Smalltalk.",
+    notiz_stil: "Du erstellst praezise deutschsprachige Vorlesungsnotizen fuer Obsidian. Schreibe sachlich, knapp und fachlich. Erfinde nichts.",
+    lmStudioModel: "",
+    temperature: 0.1,
+    topP: 0.8,
+  },
+  {
+    id: "kompakt",
+    name: "Kompakt",
+    zusammenfassungs_stil: "Du fasst deutsche Vorlesungstranskripte kompakt zusammen. Konzentriere dich auf Kernaussagen und Definitionen. Ignoriere Smalltalk und Wiederholungen.",
+    notiz_stil: "Du erstellst kompakte deutschsprachige Notizen fuer Obsidian. Sehr kurz und sachlich. Keine Fuellungen.",
+    lmStudioModel: "",
+    temperature: 0.2,
+    topP: 0.8,
+  },
+  {
+    id: "meeting",
+    name: "Meeting",
+    zusammenfassungs_stil: "Du analysierst deutsche Meeting- oder Besprechungstranskripte. Fokussiere auf Entscheidungen, Aktionspunkte und Verantwortliche.",
+    notiz_stil: "Du erstellst strukturierte deutsche Meeting-Notizen fuer Obsidian. Hebe Entscheidungen, Aktionspunkte und Verantwortliche hervor.",
+    lmStudioModel: "",
+    temperature: 0.15,
+    topP: 0.8,
+  },
+];
+
 const DEFAULT_SETTINGS = {
   backendUrl: "http://127.0.0.1:8765",
   backendAutoInstall: true,
@@ -53,10 +83,12 @@ const DEFAULT_SETTINGS = {
   backendVersion: "",
   inboxFolder: "99_Inbox/Audio",
   defaultSessionType: "Vorlesung",
+  defaultPromptProfile: "vorlesung",
   openNoteAfterProcessing: true,
   lastRun: null,
   jobHistory: [],
   sessionProfiles: DEFAULT_SESSION_PROFILES.map((profile) => ({ ...profile })),
+  promptProfiles: DEFAULT_PROMPT_PROFILES.map((profile) => ({ ...profile })),
   courseOptions: [
     "Oekonometrie",
     "Quantitative_Projekte_und_Reihenfolgenplanung",
@@ -103,6 +135,12 @@ function normalizeSettings(data) {
   settings.sessionProfiles = normalizeSessionProfiles(data?.sessionProfiles);
   if (!settings.sessionProfiles.some((profile) => profile.name === settings.defaultSessionType)) {
     settings.defaultSessionType = settings.sessionProfiles[0].name;
+  }
+  if (!Array.isArray(settings.promptProfiles) || settings.promptProfiles.length === 0) {
+    settings.promptProfiles = DEFAULT_PROMPT_PROFILES.map((profile) => ({ ...profile }));
+  }
+  if (!settings.promptProfiles.some((profile) => profile.id === settings.defaultPromptProfile)) {
+    settings.defaultPromptProfile = settings.promptProfiles[0]?.id || "vorlesung";
   }
   if (!Array.isArray(settings.courseOptions)) {
     settings.courseOptions = [...DEFAULT_SETTINGS.courseOptions];
@@ -408,6 +446,7 @@ class TranscriptProcessModal extends Modal {
       course: inferredCourse || plugin.settings.courseOptions[0] || "",
       date: window.moment ? window.moment().format("YYYY-MM-DD") : new Date().toISOString().slice(0, 10),
       sessionType: plugin.getSessionProfile(plugin.settings.defaultSessionType)?.name || plugin.getSessionProfiles()[0]?.name || "Vorlesung",
+      promptProfile: plugin.settings.defaultPromptProfile || "vorlesung",
       theme: "",
     };
     this.isSubmitting = false;
@@ -565,6 +604,17 @@ class TranscriptProcessModal extends Modal {
       this.state.theme = event.target.value.trim();
     });
     themeInputEl.addEventListener("change", () => this.onOpen());
+
+    const profileFieldEl = this.createField(metaGridEl, "Stil-Profil");
+    const profileSelectEl = profileFieldEl.createEl("select", { cls: "transcript-gui-select" });
+    this.plugin.settings.promptProfiles.forEach((profile) => {
+      const optionEl = profileSelectEl.createEl("option", { text: profile.name, value: profile.id });
+      optionEl.value = profile.id;
+    });
+    profileSelectEl.value = this.state.promptProfile;
+    profileSelectEl.addEventListener("change", (event) => {
+      this.state.promptProfile = event.target.value;
+    });
 
     this.activeJobsSectionEl = this.createSection(formEl, "Aktive Jobs");
     this.activeJobsListEl = this.activeJobsSectionEl.createDiv({ cls: "transcript-gui-active-jobs-list" });
@@ -1034,6 +1084,7 @@ class TranscriptProcessModal extends Modal {
       date: this.state.date,
       session_type: this.state.sessionType,
       theme: this.state.theme,
+      prompt_profile: this.state.promptProfile,
       template_path: this.plugin.getSessionProfile(this.state.sessionType)?.templatePath || undefined,
       storage_dir: this.plugin.getSessionProfile(this.state.sessionType)?.storageDir || undefined,
       output_dir: this.plugin.getSessionProfile(this.state.sessionType)?.outputDir || undefined,
@@ -1450,6 +1501,133 @@ class TranscriptGuiSettingTab extends PluginSettingTab {
           this.display();
         });
       });
+
+    containerEl.createEl("h3", { text: "Stil-Profile" });
+    containerEl.createEl("p", {
+      text: "Stil-Profile steuern die Anweisungen an das LLM. Jedes Profil definiert den Zusammenfassungs-Stil, den Notiz-Stil und optionale LLM-Parameter.",
+    });
+
+    const promptProfiles = this.plugin.settings.promptProfiles;
+    promptProfiles.forEach((profile, index) => {
+      containerEl.createEl("h4", { text: profile.name || `Profil ${index + 1}` });
+
+      new Setting(containerEl)
+        .setName("Name")
+        .addText((text) => {
+          text.setValue(profile.name);
+          text.onChange(async (value) => {
+            this.plugin.settings.promptProfiles[index].name = value.trim() || `Profil ${index + 1}`;
+            await this.plugin.saveSettings();
+          });
+        });
+
+      new Setting(containerEl)
+        .setName("Zusammenfassungs-Stil")
+        .setDesc("Anweisung fuer die Block-Zusammenfassung. Wird dem LLM als System-Prompt uebergeben.")
+        .addTextArea((text) => {
+          text.setValue(profile.zusammenfassungs_stil);
+          text.inputEl.rows = 3;
+          text.inputEl.cols = 50;
+          text.onChange(async (value) => {
+            this.plugin.settings.promptProfiles[index].zusammenfassungs_stil = value;
+            await this.plugin.saveSettings();
+          });
+        });
+
+      new Setting(containerEl)
+        .setName("Notiz-Stil")
+        .setDesc("Anweisung fuer die finale Synthese. Wird dem LLM als System-Prompt uebergeben.")
+        .addTextArea((text) => {
+          text.setValue(profile.notiz_stil);
+          text.inputEl.rows = 3;
+          text.inputEl.cols = 50;
+          text.onChange(async (value) => {
+            this.plugin.settings.promptProfiles[index].notiz_stil = value;
+            await this.plugin.saveSettings();
+          });
+        });
+
+      new Setting(containerEl)
+        .setName("LM Studio Modell")
+        .setDesc("Leer = Standard aus Backend-Konfiguration. Ueberschreibt das Modell fuer dieses Profil.")
+        .addText((text) => {
+          text.setPlaceholder("qwen/qwen3.6-35b-a3b");
+          text.setValue(profile.lmStudioModel || "");
+          text.onChange(async (value) => {
+            this.plugin.settings.promptProfiles[index].lmStudioModel = value.trim();
+            await this.plugin.saveSettings();
+          });
+        });
+
+      new Setting(containerEl)
+        .setName("Temperatur")
+        .setDesc("Kreativitaet des LLM (0.0 = deterministisch, 1.0 = kreativ).")
+        .addText((text) => {
+          text.setPlaceholder("0.1");
+          text.setValue(String(profile.temperature ?? 0.1));
+          text.onChange(async (value) => {
+            const num = parseFloat(value);
+            if (!isNaN(num)) {
+              this.plugin.settings.promptProfiles[index].temperature = num;
+              await this.plugin.saveSettings();
+            }
+          });
+        });
+
+      new Setting(containerEl)
+        .setName("Top-P")
+        .setDesc("Nucleus-Sampling (0.0-1.0). Hoeher = mehr Vielfalt.")
+        .addText((text) => {
+          text.setPlaceholder("0.8");
+          text.setValue(String(profile.topP ?? 0.8));
+          text.onChange(async (value) => {
+            const num = parseFloat(value);
+            if (!isNaN(num)) {
+              this.plugin.settings.promptProfiles[index].topP = num;
+              await this.plugin.saveSettings();
+            }
+          });
+        })
+        .addExtraButton((button) => {
+          button.setIcon("trash");
+          button.setTooltip("Profil loeschen");
+          button.setDisabled(promptProfiles.length <= 1);
+          button.onClick(async () => {
+            if (this.plugin.settings.promptProfiles.length <= 1) {
+              return;
+            }
+            const removed = this.plugin.settings.promptProfiles[index];
+            this.plugin.settings.promptProfiles.splice(index, 1);
+            if (this.plugin.settings.defaultPromptProfile === removed?.id) {
+              this.plugin.settings.defaultPromptProfile = this.plugin.settings.promptProfiles[0]?.id || "vorlesung";
+            }
+            await this.plugin.saveSettings();
+            this.display();
+          });
+        });
+    });
+
+    new Setting(containerEl)
+      .setName("Neues Stil-Profil")
+      .addButton((button) => {
+        button.setButtonText("Profil hinzufuegen");
+        button.onClick(async () => {
+          this.plugin.settings.promptProfiles = [
+            ...this.plugin.settings.promptProfiles,
+            {
+              id: `custom_${Date.now()}`,
+              name: `Profil ${this.plugin.settings.promptProfiles.length + 1}`,
+              zusammenfassungs_stil: "",
+              notiz_stil: "",
+              lmStudioModel: "",
+              temperature: 0.1,
+              topP: 0.8,
+            },
+          ];
+          await this.plugin.saveSettings();
+          this.display();
+        });
+      });
   }
 }
 
@@ -1591,6 +1769,11 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
   getSessionProfile(name) {
     const profiles = this.getSessionProfiles();
     return profiles.find((profile) => profile.name === name) || profiles[0] || null;
+  }
+
+  getPromptProfile(id) {
+    const profiles = this.settings.promptProfiles || [];
+    return profiles.find((profile) => profile.id === id) || profiles[0] || DEFAULT_PROMPT_PROFILES[0];
   }
 
   async recordLastRun(payload) {

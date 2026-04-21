@@ -1,7 +1,7 @@
 {
   "id": "obsidian-transcript-gui",
   "name": "Transcript GUI",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "minAppVersion": "1.5.0",
   "description": "GUI for the lecture transcription pipeline with automatic backend management.",
   "author": "Valentino L'Abbate",
