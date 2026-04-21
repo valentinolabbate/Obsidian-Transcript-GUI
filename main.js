@@ -10,11 +10,17 @@ const {
   requestUrl,
   normalizePath,
 } = require("obsidian");
+const { spawn } = require("child_process");
+const path = require("path");
 
 const AUDIO_EXTENSIONS = new Set(["mp3", "m4a", "wav", "mp4", "webm", "ogg", "flac", "aac", "aiff"]);
 
 const DEFAULT_SETTINGS = {
   backendUrl: "http://127.0.0.1:8765",
+  autoStartBackend: true,
+  backendProjectDir: "40_Projekte/obsidian-lecture-pipeline",
+  backendStartCommand: ".venv/bin/lecture-pipeline serve --host 127.0.0.1 --port 8765",
+  backendHealthTimeoutMs: 30000,
   inboxFolder: "99_Inbox/Audio",
   defaultSessionType: "Vorlesung",
   openNoteAfterProcessing: true,
@@ -531,6 +537,54 @@ class TranscriptGuiSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
+      .setName("Backend automatisch starten")
+      .setDesc("Startet den lokalen Server automatisch, wenn er nicht erreichbar ist.")
+      .addToggle((toggle) => {
+        toggle.setValue(this.plugin.settings.autoStartBackend);
+        toggle.onChange(async (value) => {
+          this.plugin.settings.autoStartBackend = value;
+          await this.plugin.saveSettings();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Backend-Projektordner")
+      .setDesc("Relativ zum Vault oder absolut. Von hier wird der Server automatisch gestartet.")
+      .addText((text) => {
+        text.setPlaceholder("40_Projekte/obsidian-lecture-pipeline");
+        text.setValue(this.plugin.settings.backendProjectDir);
+        text.onChange(async (value) => {
+          this.plugin.settings.backendProjectDir = value.trim() || DEFAULT_SETTINGS.backendProjectDir;
+          await this.plugin.saveSettings();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Backend-Startkommando")
+      .setDesc("Wird lokal im Projektordner ausgefuehrt, falls das Backend nicht laeuft.")
+      .addText((text) => {
+        text.setPlaceholder(DEFAULT_SETTINGS.backendStartCommand);
+        text.setValue(this.plugin.settings.backendStartCommand);
+        text.onChange(async (value) => {
+          this.plugin.settings.backendStartCommand = value.trim() || DEFAULT_SETTINGS.backendStartCommand;
+          await this.plugin.saveSettings();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Backend-Start-Timeout")
+      .setDesc("Wie lange die GUI auf den automatischen Start warten soll.")
+      .addText((text) => {
+        text.setPlaceholder("30000");
+        text.setValue(String(this.plugin.settings.backendHealthTimeoutMs));
+        text.onChange(async (value) => {
+          const parsed = Number(value.trim());
+          this.plugin.settings.backendHealthTimeoutMs = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SETTINGS.backendHealthTimeoutMs;
+          await this.plugin.saveSettings();
+        });
+      });
+
+    new Setting(containerEl)
       .setName("Inbox-Ordner")
       .setDesc("Hier sucht die GUI nach der neuesten Audio-Datei.")
       .addText((text) => {
@@ -584,6 +638,8 @@ class TranscriptGuiSettingTab extends PluginSettingTab {
 module.exports = class TranscriptGuiPlugin extends Plugin {
   async onload() {
     await this.loadSettings();
+    this.backendStartPromise = null;
+    this.lastBackendPid = null;
 
     this.addRibbonIcon("audio-file", "Transcript GUI", () => this.openProcessModal());
 
@@ -663,8 +719,20 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
       name: "Check transcript backend health",
       callback: async () => {
         try {
-          const response = await requestUrl({ url: `${this.settings.backendUrl}/health`, method: "GET" });
-          const payload = response.json;
+          const payload = await this.ensureBackendAvailable();
+          new Notice(`Backend ok: ${payload.lm_studio_model}`);
+        } catch (error) {
+          new Notice(`Backend nicht erreichbar: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      },
+    });
+
+    this.addCommand({
+      id: "start-transcript-backend",
+      name: "Start transcript backend",
+      callback: async () => {
+        try {
+          const payload = await this.ensureBackendAvailable({ forceStart: true });
           new Notice(`Backend ok: ${payload.lm_studio_model}`);
         } catch (error) {
           new Notice(`Backend nicht erreichbar: ${error instanceof Error ? error.message : String(error)}`);
@@ -739,6 +807,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
   }
 
   async processLecture(payload) {
+    await this.ensureBackendAvailable();
     const response = await requestUrl({
       url: `${this.settings.backendUrl}/process`,
       method: "POST",
@@ -752,6 +821,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
   }
 
   async startLectureJob(payload) {
+    await this.ensureBackendAvailable();
     const response = await requestUrl({
       url: `${this.settings.backendUrl}/jobs`,
       method: "POST",
@@ -834,5 +904,71 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
 
   async openNoteFromAbsolutePath(absolutePath) {
     await this.openVaultPathFromAbsolutePath(absolutePath);
+  }
+
+  async ensureBackendAvailable(options = {}) {
+    const { forceStart = false } = options;
+    try {
+      return await this.fetchBackendHealth();
+    } catch (error) {
+      if (!this.settings.autoStartBackend && !forceStart) {
+        throw error;
+      }
+    }
+
+    if (!this.backendStartPromise) {
+      this.backendStartPromise = this.startBackendProcess().finally(() => {
+        this.backendStartPromise = null;
+      });
+    }
+    await this.backendStartPromise;
+    return this.fetchBackendHealth();
+  }
+
+  async fetchBackendHealth() {
+    const response = await requestUrl({ url: `${this.settings.backendUrl}/health`, method: "GET" });
+    if (response.status >= 400) {
+      throw new Error(response.text || `Backend-Fehler ${response.status}`);
+    }
+    return response.json;
+  }
+
+  resolveBackendProjectDir() {
+    const configured = this.settings.backendProjectDir?.trim() || DEFAULT_SETTINGS.backendProjectDir;
+    if (configured.startsWith("/") || /^[A-Za-z]:[\\/]/.test(configured)) {
+      return configured;
+    }
+    const adapter = this.app.vault.adapter;
+    if (!(adapter instanceof FileSystemAdapter)) {
+      throw new Error("Dateisystem-Adapter fuer Backend-Autostart nicht verfuegbar.");
+    }
+    return path.join(adapter.getBasePath(), configured);
+  }
+
+  async startBackendProcess() {
+    const projectDir = this.resolveBackendProjectDir();
+    const command = this.settings.backendStartCommand?.trim() || DEFAULT_SETTINGS.backendStartCommand;
+    const child = spawn(command, {
+      cwd: projectDir,
+      shell: true,
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
+    this.lastBackendPid = child.pid;
+
+    const timeoutMs = Number(this.settings.backendHealthTimeoutMs || DEFAULT_SETTINGS.backendHealthTimeoutMs);
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      await new Promise((resolve) => window.setTimeout(resolve, 750));
+      try {
+        await this.fetchBackendHealth();
+        return;
+      } catch (_error) {
+        // wait until backend responds or timeout expires
+      }
+    }
+
+    throw new Error("Backend konnte nicht rechtzeitig gestartet werden.");
   }
 };
