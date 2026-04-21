@@ -15,6 +15,27 @@ const path = require("path");
 
 const AUDIO_EXTENSIONS = new Set(["mp3", "m4a", "wav", "mp4", "webm", "ogg", "flac", "aac", "aiff"]);
 
+const DEFAULT_SESSION_PROFILES = [
+  {
+    name: "Vorlesung",
+    templatePath: "",
+    storageDir: "10_Studium/1_Semester_Master_WiWi/{course}/Rohdaten",
+    outputDir: "10_Studium/1_Semester_Master_WiWi/{course}/Sitzungen",
+  },
+  {
+    name: "Uebung",
+    templatePath: "",
+    storageDir: "10_Studium/1_Semester_Master_WiWi/{course}/Rohdaten",
+    outputDir: "10_Studium/1_Semester_Master_WiWi/{course}/Sitzungen",
+  },
+  {
+    name: "Tutorium",
+    templatePath: "",
+    storageDir: "10_Studium/1_Semester_Master_WiWi/{course}/Rohdaten",
+    outputDir: "10_Studium/1_Semester_Master_WiWi/{course}/Sitzungen",
+  },
+];
+
 const DEFAULT_SETTINGS = {
   backendUrl: "http://127.0.0.1:8765",
   autoStartBackend: true,
@@ -26,6 +47,7 @@ const DEFAULT_SETTINGS = {
   openNoteAfterProcessing: true,
   lastRun: null,
   jobHistory: [],
+  sessionProfiles: DEFAULT_SESSION_PROFILES.map((profile) => ({ ...profile })),
   courseOptions: [
     "Oekonometrie",
     "Quantitative_Projekte_und_Reihenfolgenplanung",
@@ -33,6 +55,51 @@ const DEFAULT_SETTINGS = {
     "Dienstleistungsproduktion",
   ],
 };
+
+function cloneSessionProfile(profile = {}) {
+  return {
+    name: String(profile.name || "").trim(),
+    templatePath: String(profile.templatePath || "").trim(),
+    storageDir: String(profile.storageDir || "").trim(),
+    outputDir: String(profile.outputDir || "").trim(),
+  };
+}
+
+function normalizeSessionProfiles(profiles) {
+  const fallback = DEFAULT_SESSION_PROFILES.map((profile) => cloneSessionProfile(profile));
+  if (!Array.isArray(profiles) || profiles.length === 0) {
+    return fallback;
+  }
+
+  const normalized = [];
+  const seen = new Set();
+  for (const profile of profiles) {
+    const next = cloneSessionProfile(profile);
+    if (!next.name || seen.has(next.name)) {
+      continue;
+    }
+    seen.add(next.name);
+    normalized.push({
+      ...next,
+      storageDir: next.storageDir || fallback[0].storageDir,
+      outputDir: next.outputDir || fallback[0].outputDir,
+    });
+  }
+
+  return normalized.length > 0 ? normalized : fallback;
+}
+
+function normalizeSettings(data) {
+  const settings = Object.assign({}, DEFAULT_SETTINGS, data || {});
+  settings.sessionProfiles = normalizeSessionProfiles(data?.sessionProfiles);
+  if (!settings.sessionProfiles.some((profile) => profile.name === settings.defaultSessionType)) {
+    settings.defaultSessionType = settings.sessionProfiles[0].name;
+  }
+  if (!Array.isArray(settings.courseOptions)) {
+    settings.courseOptions = [...DEFAULT_SETTINGS.courseOptions];
+  }
+  return settings;
+}
 
 class AudioFileSuggestModal extends FuzzySuggestModal {
   constructor(app, files, onChoose) {
@@ -65,7 +132,7 @@ class TranscriptProcessModal extends Modal {
       audioPath: initialAudioPath || (latestInboxAudio ? latestInboxAudio.path : ""),
       course: inferredCourse || plugin.settings.courseOptions[0] || "",
       date: window.moment ? window.moment().format("YYYY-MM-DD") : new Date().toISOString().slice(0, 10),
-      sessionType: plugin.settings.defaultSessionType,
+      sessionType: plugin.getSessionProfile(plugin.settings.defaultSessionType)?.name || plugin.getSessionProfiles()[0]?.name || "Vorlesung",
       theme: "",
     };
     this.isSubmitting = false;
@@ -94,13 +161,14 @@ class TranscriptProcessModal extends Modal {
     const shellEl = contentEl.createDiv({ cls: "transcript-gui-shell" });
     const heroEl = shellEl.createDiv({ cls: "transcript-gui-hero" });
     const heroTextEl = heroEl.createDiv({ cls: "transcript-gui-hero-copy" });
-    heroTextEl.createEl("h2", { text: "Vorlesungstranskript importieren" });
+    const selectedProfile = this.plugin.getSessionProfile(this.state.sessionType);
+    heroTextEl.createEl("h2", { text: "Sitzungstranskript importieren" });
     heroTextEl.createEl("p", {
-      text: "Audio uebernehmen, Vorlesungsmetadaten setzen und die lokale Pipeline direkt aus Obsidian starten.",
+      text: "Audio uebernehmen, Sitzungsmetadaten setzen und die lokale Pipeline direkt aus Obsidian starten.",
     });
 
     const badgeRowEl = heroEl.createDiv({ cls: "transcript-gui-badges" });
-    this.createBadge(badgeRowEl, this.state.course ? this.state.course.replaceAll("_", " ") : "Kein Kurs", "Kurs");
+    this.createBadge(badgeRowEl, this.state.course ? this.state.course.replaceAll("_", " ") : "Kein Kontext", "Kontext");
     this.createBadge(badgeRowEl, this.state.sessionType, "Typ");
     this.createBadge(badgeRowEl, this.plugin.settings.inboxFolder, "Inbox");
 
@@ -112,6 +180,9 @@ class TranscriptProcessModal extends Modal {
       const metaEl = lastRunEl.createDiv({ cls: "transcript-gui-run-meta" });
       metaEl.createSpan({ text: lastRun.timestamp || "unbekannt" });
       metaEl.createSpan({ text: lastRun.status || "unbekannt" });
+      if (lastRun.sessionType) {
+        metaEl.createSpan({ text: lastRun.sessionType });
+      }
       if (lastRun.course) {
         metaEl.createSpan({ text: lastRun.course.replaceAll("_", " ") });
       }
@@ -164,15 +235,15 @@ class TranscriptProcessModal extends Modal {
     const detailsSectionEl = this.createSection(
       detailsGridEl,
       "Sitzungsdaten",
-      "Die Metadaten steuern Dateiname, Kurszuordnung und Note."
+      "Die Metadaten steuern Dateiname, Kontext und Note."
     );
     const contextSectionEl = this.createSection(
       detailsGridEl,
       "Kontext",
-      "Kurs wird nach Moeglichkeit aus der aktuellen Note erkannt und kann ueberschrieben werden."
+      "Kontext wird nach Moeglichkeit aus der aktuellen Note erkannt und kann ueberschrieben werden."
     );
 
-    const courseFieldEl = this.createField(contextSectionEl, "Kurs", "Ordnername im Vault");
+    const courseFieldEl = this.createField(contextSectionEl, "Kontext", "Ordnername oder Projektkontext im Vault");
     const courseInputEl = courseFieldEl.createEl("input", { cls: "transcript-gui-input" });
     courseInputEl.type = "text";
     courseInputEl.placeholder = "Oekonometrie";
@@ -207,11 +278,11 @@ class TranscriptProcessModal extends Modal {
 
     const typeFieldEl = this.createField(metaGridEl, "Sitzungstyp");
     const typeSelectEl = typeFieldEl.createEl("select", { cls: "transcript-gui-select" });
-    ["Vorlesung", "Uebung", "Tutorium"].forEach((type) => {
-      const optionEl = typeSelectEl.createEl("option", { text: type, value: type });
-      optionEl.value = type;
+    this.plugin.getSessionProfiles().forEach((profile) => {
+      const optionEl = typeSelectEl.createEl("option", { text: profile.name, value: profile.name });
+      optionEl.value = profile.name;
     });
-    typeSelectEl.value = this.state.sessionType;
+    typeSelectEl.value = selectedProfile?.name || this.plugin.getSessionProfiles()[0]?.name || "";
     typeSelectEl.addEventListener("change", (event) => {
       this.state.sessionType = event.target.value;
       this.onOpen();
@@ -221,11 +292,23 @@ class TranscriptProcessModal extends Modal {
     contextInfoEl.createEl("div", { cls: "transcript-gui-info-title", text: "Erkannter Kontext" });
     contextInfoEl.createEl("div", {
       cls: "transcript-gui-info-line",
-      text: this.state.course ? `Vorausgewaehlter Kurs: ${this.state.course.replaceAll("_", " ")}` : "Kein Kurs aus dem Kontext erkannt",
+      text: this.state.course ? `Vorausgewaehlter Kontext: ${this.state.course.replaceAll("_", " ")}` : "Kein Kontext aus der aktuellen Note erkannt",
     });
     contextInfoEl.createEl("div", {
       cls: "transcript-gui-info-line",
       text: `Backend: ${this.plugin.settings.backendUrl}`,
+    });
+    contextInfoEl.createEl("div", {
+      cls: "transcript-gui-info-line",
+      text: `Template: ${selectedProfile?.templatePath || "Standard-Template"}`,
+    });
+    contextInfoEl.createEl("div", {
+      cls: "transcript-gui-info-line",
+      text: `Zwischenspeicher: ${selectedProfile?.storageDir || "Standardpfad"}`,
+    });
+    contextInfoEl.createEl("div", {
+      cls: "transcript-gui-info-line",
+      text: `Zielordner: ${selectedProfile?.outputDir || "Standardpfad"}`,
     });
 
     const history = this.plugin.settings.jobHistory || [];
@@ -321,6 +404,9 @@ class TranscriptProcessModal extends Modal {
 
     const metaEl = cardEl.createDiv({ cls: "transcript-gui-history-meta" });
     metaEl.createSpan({ text: entry.status || "unbekannt" });
+    if (entry.sessionType) {
+      metaEl.createSpan({ text: entry.sessionType });
+    }
     if (entry.course) {
       metaEl.createSpan({ text: entry.course.replaceAll("_", " ") });
     }
@@ -407,7 +493,8 @@ class TranscriptProcessModal extends Modal {
     this.progressPercentEl.setText(`${progress}%`);
     this.progressStageEl.setText(this.formatStage(snapshot.stage, snapshot.status));
     const message = snapshot.error || snapshot.message || "Warte auf Status...";
-    this.progressMessageEl.setText(message);
+    const chunkSuffix = snapshot.current_chunk && snapshot.total_chunks ? ` (${snapshot.current_chunk}/${snapshot.total_chunks})` : "";
+    this.progressMessageEl.setText(`${message}${chunkSuffix}`);
   }
 
   formatStage(stage, status) {
@@ -440,7 +527,7 @@ class TranscriptProcessModal extends Modal {
       throw new Error("Bitte eine Audio-Datei angeben.");
     }
     if (!this.state.course) {
-      throw new Error("Bitte einen Kurs angeben.");
+      throw new Error("Bitte einen Kontext angeben.");
     }
     if (!this.state.date) {
       throw new Error("Bitte ein Datum angeben.");
@@ -472,6 +559,9 @@ class TranscriptProcessModal extends Modal {
       date: this.state.date,
       session_type: this.state.sessionType,
       theme: this.state.theme,
+      template_path: this.plugin.getSessionProfile(this.state.sessionType)?.templatePath || undefined,
+      storage_dir: this.plugin.getSessionProfile(this.state.sessionType)?.storageDir || undefined,
+      output_dir: this.plugin.getSessionProfile(this.state.sessionType)?.outputDir || undefined,
     };
 
     try {
@@ -481,7 +571,7 @@ class TranscriptProcessModal extends Modal {
         }
         this.setProgress(snapshot);
         if (snapshot.status === "running") {
-          this.setStatus(`${this.formatStage(snapshot.stage, snapshot.status)}\n${snapshot.message || ""}`.trim(), "neutral");
+          this.setStatus(`${this.formatStage(snapshot.stage, snapshot.status)} (${snapshot.progress || 0}%)\n${snapshot.message || ""}`.trim(), "neutral");
         }
       });
 
@@ -493,6 +583,7 @@ class TranscriptProcessModal extends Modal {
         transcriptPath: result.transcript_path,
         audioPath: this.state.audioPath,
         course: this.state.course,
+        sessionType: this.state.sessionType,
         theme: this.state.theme,
       };
       this.setStatus(`Fertig.\nNote: ${result.note_path}\nRohtranskript: ${result.transcript_path}`, "success");
@@ -515,6 +606,7 @@ class TranscriptProcessModal extends Modal {
         error: message,
         audioPath: this.state.audioPath,
         course: this.state.course,
+        sessionType: this.state.sessionType,
         theme: this.state.theme,
       });
       this.setProgress({ progress: 100, stage: "failed", message, status: "failed", error: message });
@@ -614,7 +706,7 @@ class TranscriptGuiSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Standard-Sitzungstyp")
       .addDropdown((dropdown) => {
-        ["Vorlesung", "Uebung", "Tutorium"].forEach((type) => dropdown.addOption(type, type));
+        this.plugin.getSessionProfiles().forEach((profile) => dropdown.addOption(profile.name, profile.name));
         dropdown.setValue(this.plugin.settings.defaultSessionType);
         dropdown.onChange(async (value) => {
           this.plugin.settings.defaultSessionType = value;
@@ -633,8 +725,8 @@ class TranscriptGuiSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("Kursoptionen")
-      .setDesc("Ein Kurs pro Zeile. Wird im Modal als Schnellwahl angeboten.")
+      .setName("Kontextoptionen")
+      .setDesc("Ein Kontext pro Zeile. Wird im Modal als Schnellwahl angeboten.")
       .addTextArea((text) => {
         text.setValue(this.plugin.settings.courseOptions.join("\n"));
         text.inputEl.rows = 6;
@@ -645,6 +737,106 @@ class TranscriptGuiSettingTab extends PluginSettingTab {
             .map((item) => item.trim())
             .filter(Boolean);
           await this.plugin.saveSettings();
+        });
+      });
+
+    containerEl.createEl("h3", { text: "Typ-Profile" });
+    containerEl.createEl("p", {
+      text: "Jeder Typ kann eigene Template- und Ablagepfade bekommen. Platzhalter: {course}, {context}, {date}, {session_type}, {theme}, {stem}.",
+    });
+
+    const profiles = this.plugin.getSessionProfiles();
+    profiles.forEach((profile, index) => {
+      containerEl.createEl("h4", { text: profile.name || `Typ ${index + 1}` });
+
+      new Setting(containerEl)
+        .setName("Name")
+        .setDesc("Anzeige im Auswahlfeld des Modals.")
+        .addText((text) => {
+          text.setValue(profile.name);
+          text.onChange(async (value) => {
+            const previousName = this.plugin.settings.sessionProfiles[index]?.name;
+            this.plugin.settings.sessionProfiles[index].name = value.trim() || `Typ ${index + 1}`;
+            this.plugin.settings.sessionProfiles = normalizeSessionProfiles(this.plugin.settings.sessionProfiles);
+            if (this.plugin.settings.defaultSessionType === previousName) {
+              this.plugin.settings.defaultSessionType = this.plugin.settings.sessionProfiles[index]?.name || this.plugin.settings.sessionProfiles[0].name;
+            }
+            await this.plugin.saveSettings();
+          });
+        });
+
+      new Setting(containerEl)
+        .setName("Template-Pfad")
+        .setDesc("Optional. Relative Pfade werden vom Vault aus aufgeloest.")
+        .addText((text) => {
+          text.setPlaceholder("90_Templates/Meeting.md");
+          text.setValue(profile.templatePath || "");
+          text.onChange(async (value) => {
+            this.plugin.settings.sessionProfiles[index].templatePath = value.trim();
+            await this.plugin.saveSettings();
+          });
+        });
+
+      new Setting(containerEl)
+        .setName("Zwischenspeicher")
+        .setDesc("Basisordner fuer Audio, Transkripte und Jobdateien.")
+        .addText((text) => {
+          text.setPlaceholder("10_Studium/1_Semester_Master_WiWi/{course}/Rohdaten");
+          text.setValue(profile.storageDir || "");
+          text.onChange(async (value) => {
+            this.plugin.settings.sessionProfiles[index].storageDir = value.trim();
+            await this.plugin.saveSettings();
+          });
+        });
+
+      new Setting(containerEl)
+        .setName("Zielordner")
+        .setDesc("Hier landet die fertige Notiz.")
+        .addText((text) => {
+          text.setPlaceholder("10_Studium/1_Semester_Master_WiWi/{course}/Sitzungen");
+          text.setValue(profile.outputDir || "");
+          text.onChange(async (value) => {
+            this.plugin.settings.sessionProfiles[index].outputDir = value.trim();
+            await this.plugin.saveSettings();
+          });
+        })
+        .addExtraButton((button) => {
+          button.setIcon("trash");
+          button.setTooltip("Profil loeschen");
+          button.setDisabled(profiles.length <= 1);
+          button.onClick(async () => {
+            if (this.plugin.settings.sessionProfiles.length <= 1) {
+              return;
+            }
+            const removed = this.plugin.settings.sessionProfiles[index];
+            this.plugin.settings.sessionProfiles.splice(index, 1);
+            this.plugin.settings.sessionProfiles = normalizeSessionProfiles(this.plugin.settings.sessionProfiles);
+            if (this.plugin.settings.defaultSessionType === removed?.name) {
+              this.plugin.settings.defaultSessionType = this.plugin.settings.sessionProfiles[0].name;
+            }
+            await this.plugin.saveSettings();
+            this.display();
+          });
+        });
+    });
+
+    new Setting(containerEl)
+      .setName("Neues Typ-Profil")
+      .setDesc("Zum Beispiel fuer Meetings, Calls oder Protokolle.")
+      .addButton((button) => {
+        button.setButtonText("Profil hinzufuegen");
+        button.onClick(async () => {
+          this.plugin.settings.sessionProfiles = normalizeSessionProfiles([
+            ...this.plugin.settings.sessionProfiles,
+            {
+              name: `Typ ${this.plugin.settings.sessionProfiles.length + 1}`,
+              templatePath: "",
+              storageDir: this.plugin.settings.sessionProfiles[0]?.storageDir || DEFAULT_SETTINGS.sessionProfiles[0].storageDir,
+              outputDir: this.plugin.settings.sessionProfiles[0]?.outputDir || DEFAULT_SETTINGS.sessionProfiles[0].outputDir,
+            },
+          ]);
+          await this.plugin.saveSettings();
+          this.display();
         });
       });
   }
@@ -685,9 +877,11 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
         const course = this.guessCourseFromContext() || this.settings.courseOptions[0] || "";
         if (!course) {
           this.openProcessModal(latest.path);
-          new Notice("Kein Kurskontext erkannt. Modal wurde zum Pruefen geoeffnet.");
+          new Notice("Kein Kontext erkannt. Modal wurde zum Pruefen geoeffnet.");
           return;
         }
+
+        const sessionProfile = this.getSessionProfile(this.settings.defaultSessionType);
 
         const payload = {
           audio_path: latest.path,
@@ -695,6 +889,9 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
           date: window.moment ? window.moment().format("YYYY-MM-DD") : new Date().toISOString().slice(0, 10),
           session_type: this.settings.defaultSessionType,
           theme: this.suggestThemeFromAudio(latest),
+          template_path: sessionProfile?.templatePath || undefined,
+          storage_dir: sessionProfile?.storageDir || undefined,
+          output_dir: sessionProfile?.outputDir || undefined,
         };
 
         try {
@@ -708,6 +905,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
             transcriptPath: result.transcript_path,
             audioPath: latest.path,
             course,
+            sessionType: payload.session_type,
             theme: payload.theme,
           });
           new Notice(`Verarbeitung abgeschlossen: ${payload.theme}`);
@@ -722,6 +920,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
             error: message,
             audioPath: latest.path,
             course,
+            sessionType: payload.session_type,
             theme: payload.theme,
           });
           new Notice(`Verarbeitung fehlgeschlagen: ${message}`);
@@ -759,11 +958,21 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
   }
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    this.settings = normalizeSettings(await this.loadData());
   }
 
   async saveSettings() {
+    this.settings = normalizeSettings(this.settings);
     await this.saveData(this.settings);
+  }
+
+  getSessionProfiles() {
+    return normalizeSessionProfiles(this.settings.sessionProfiles);
+  }
+
+  getSessionProfile(name) {
+    const profiles = this.getSessionProfiles();
+    return profiles.find((profile) => profile.name === name) || profiles[0] || null;
   }
 
   async recordLastRun(payload) {
