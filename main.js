@@ -2107,13 +2107,6 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
 
     const logPath = path.join(installDir, "backend.log");
 
-    // Pre-flight check: ensure executable works before spawning
-    try {
-      await execPromise(`"${executable}" --help`, { cwd: installDir, env: { ...process.env, PATH: patchedPath } });
-    } catch (_error) {
-      throw new Error("Backend-Installation scheint beschädigt zu sein. Versuche eine Neuinstallation über die Plugin-Einstellungen.");
-    }
-
     // Ensure log file exists before spawning
     fs.writeFileSync(logPath, `\n--- Backend started at ${new Date().toISOString()} ---\n`, { flag: "a" });
 
