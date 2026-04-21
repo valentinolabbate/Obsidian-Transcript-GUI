@@ -19,6 +19,7 @@ const DEFAULT_SETTINGS = {
   defaultSessionType: "Vorlesung",
   openNoteAfterProcessing: true,
   lastRun: null,
+  jobHistory: [],
   courseOptions: [
     "Oekonometrie",
     "Quantitative_Projekte_und_Reihenfolgenplanung",
@@ -69,6 +70,12 @@ class TranscriptProcessModal extends Modal {
     this.cancelButtonEl = null;
     this.actionButtons = [];
     this.courseListId = `transcript-gui-course-list-${Date.now()}`;
+    this.progressBarEl = null;
+    this.progressPercentEl = null;
+    this.progressStageEl = null;
+    this.progressMessageEl = null;
+    this.pollToken = 0;
+    this.progressSnapshot = { progress: 0, stage: "idle", message: "Noch kein Job aktiv.", status: "idle" };
   }
 
   onOpen() {
@@ -215,7 +222,26 @@ class TranscriptProcessModal extends Modal {
       text: `Backend: ${this.plugin.settings.backendUrl}`,
     });
 
+    const history = this.plugin.settings.jobHistory || [];
+    if (history.length > 0) {
+      const historySectionEl = this.createSection(
+        shellEl,
+        "Letzte Jobs",
+        "Direkte Spruenge zu erzeugten Notizen, Rohtranskripten und Eingabedateien."
+      );
+      const historyGridEl = historySectionEl.createDiv({ cls: "transcript-gui-history-grid" });
+      history.slice(0, 6).forEach((entry) => this.renderHistoryEntry(historyGridEl, entry));
+    }
+
     const footerEl = shellEl.createDiv({ cls: "transcript-gui-footer" });
+    const progressEl = footerEl.createDiv({ cls: "transcript-gui-progress" });
+    const progressHeadEl = progressEl.createDiv({ cls: "transcript-gui-progress-head" });
+    this.progressStageEl = progressHeadEl.createEl("div", { cls: "transcript-gui-progress-stage", text: "Bereit" });
+    this.progressPercentEl = progressHeadEl.createEl("div", { cls: "transcript-gui-progress-percent", text: "0%" });
+    const progressTrackEl = progressEl.createDiv({ cls: "transcript-gui-progress-track" });
+    this.progressBarEl = progressTrackEl.createDiv({ cls: "transcript-gui-progress-bar" });
+    this.progressMessageEl = progressEl.createEl("div", { cls: "transcript-gui-progress-message", text: "Noch kein Job aktiv." });
+
     const actionsEl = footerEl.createDiv({ cls: "transcript-gui-actions" });
     this.submitButtonEl = actionsEl.createEl("button", { text: this.isSubmitting ? "Verarbeite..." : "Pipeline starten", cls: "mod-cta" });
     this.submitButtonEl.disabled = this.isSubmitting;
@@ -227,9 +253,11 @@ class TranscriptProcessModal extends Modal {
 
     this.statusEl = footerEl.createDiv({ cls: "transcript-gui-status" });
     this.setStatus(this.statusMessage, this.statusKind);
+    this.setProgress(this.progressSnapshot);
   }
 
   onClose() {
+    this.pollToken += 1;
     this.modalEl.removeClass("transcript-gui-modal-host");
     this.contentEl.empty();
   }
@@ -264,6 +292,44 @@ class TranscriptProcessModal extends Modal {
     const buttonEl = parentEl.createEl("button", { text, cls: "transcript-gui-secondary-button" });
     buttonEl.addEventListener("click", onClick);
     this.actionButtons.push(buttonEl);
+    return buttonEl;
+  }
+
+  renderHistoryEntry(parentEl, entry) {
+    const cardEl = parentEl.createDiv({ cls: `transcript-gui-history-card ${entry.status === "failed" ? "is-error" : "is-success"}` });
+    cardEl.createEl("div", { cls: "transcript-gui-history-title", text: entry.theme || "Unbenannter Lauf" });
+    const metaEl = cardEl.createDiv({ cls: "transcript-gui-history-meta" });
+    metaEl.createSpan({ text: entry.status || "unbekannt" });
+    if (entry.course) {
+      metaEl.createSpan({ text: entry.course.replaceAll("_", " ") });
+    }
+    if (entry.timestamp) {
+      metaEl.createSpan({ text: new Date(entry.timestamp).toLocaleString("de-DE") });
+    }
+
+    if (entry.error) {
+      cardEl.createDiv({ cls: "transcript-gui-history-path", text: entry.error });
+    }
+
+    const actionsEl = cardEl.createDiv({ cls: "transcript-gui-history-actions" });
+    if (entry.notePath) {
+      this.createHistoryLink(actionsEl, "Notiz", () => this.plugin.openVaultPathFromAbsolutePath(entry.notePath));
+    }
+    if (entry.transcriptPath) {
+      this.createHistoryLink(actionsEl, "Transkript", () => this.plugin.openVaultPathFromAbsolutePath(entry.transcriptPath));
+    }
+    if (entry.audioPath) {
+      this.createHistoryLink(actionsEl, "Audio", () => this.plugin.openVaultPathFromRelativeOrAbsolute(entry.audioPath));
+    }
+  }
+
+  createHistoryLink(parentEl, text, onClick) {
+    const buttonEl = parentEl.createEl("button", { text, cls: "transcript-gui-history-link" });
+    buttonEl.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await onClick();
+    });
     return buttonEl;
   }
 
@@ -310,6 +376,44 @@ class TranscriptProcessModal extends Modal {
     }
   }
 
+  setProgress(snapshot) {
+    this.progressSnapshot = snapshot;
+    if (!this.progressBarEl || !this.progressPercentEl || !this.progressStageEl || !this.progressMessageEl) {
+      return;
+    }
+    const progress = Math.max(0, Math.min(100, Number(snapshot.progress || 0)));
+    this.progressBarEl.style.width = `${progress}%`;
+    this.progressPercentEl.setText(`${progress}%`);
+    this.progressStageEl.setText(this.formatStage(snapshot.stage, snapshot.status));
+    const message = snapshot.error || snapshot.message || "Warte auf Status...";
+    this.progressMessageEl.setText(message);
+  }
+
+  formatStage(stage, status) {
+    if (status === "completed") {
+      return "Abgeschlossen";
+    }
+    if (status === "failed") {
+      return "Fehlgeschlagen";
+    }
+
+    const labels = {
+      queued: "Warteschlange",
+      ingest: "Audio uebernehmen",
+      preprocess: "Vorverarbeitung",
+      transcription: "Transkription",
+      diarization: "Speaker-Erkennung",
+      transcript_render: "Rohtranskript",
+      summary_chunks: "Block-Zusammenfassung",
+      summary_final: "Finale Synthese",
+      note_render: "Notiz schreiben",
+      completed: "Abgeschlossen",
+      failed: "Fehlgeschlagen",
+      idle: "Bereit",
+    };
+    return labels[stage] || stage || "Verarbeitung";
+  }
+
   validate() {
     if (!this.state.audioPath) {
       throw new Error("Bitte eine Audio-Datei angeben.");
@@ -338,30 +442,48 @@ class TranscriptProcessModal extends Modal {
 
     this.setBusy(true);
     this.setStatus("Pipeline wird gestartet...");
+    this.setProgress({ progress: 0, stage: "queued", message: "Job wird an das Backend gesendet.", status: "queued" });
+    const currentPollToken = ++this.pollToken;
+
+    const payload = {
+      audio_path: this.state.audioPath,
+      course: this.state.course,
+      date: this.state.date,
+      session_type: this.state.sessionType,
+      theme: this.state.theme,
+    };
 
     try {
-      const result = await this.plugin.processLecture({
-        audio_path: this.state.audioPath,
-        course: this.state.course,
-        date: this.state.date,
-        session_type: this.state.sessionType,
-        theme: this.state.theme,
+      const result = await this.plugin.runLectureJob(payload, (snapshot) => {
+        if (currentPollToken !== this.pollToken) {
+          return;
+        }
+        this.setProgress(snapshot);
+        if (snapshot.status === "running") {
+          this.setStatus(`${this.formatStage(snapshot.stage, snapshot.status)}\n${snapshot.message || ""}`.trim(), "neutral");
+        }
       });
 
-      this.setStatus(`Fertig.\nNote: ${result.paths.note_path}\nRohtranskript: ${result.paths.transcript_markdown_path}`, "success");
-      await this.plugin.recordLastRun({
+      const entry = {
         timestamp: new Date().toISOString(),
+        jobId: result.job_id,
         status: "completed",
-        notePath: result.paths.note_path,
-        transcriptPath: result.paths.transcript_markdown_path,
+        notePath: result.note_path,
+        transcriptPath: result.transcript_path,
         audioPath: this.state.audioPath,
         course: this.state.course,
         theme: this.state.theme,
-      });
+      };
+      this.setStatus(`Fertig.\nNote: ${result.note_path}\nRohtranskript: ${result.transcript_path}`, "success");
+      await this.plugin.recordLastRun(entry);
       new Notice("Transkript-Pipeline erfolgreich abgeschlossen.");
 
-      if (this.plugin.settings.openNoteAfterProcessing) {
-        await this.plugin.openNoteFromAbsolutePath(result.paths.note_path);
+      if (currentPollToken === this.pollToken) {
+        this.onOpen();
+      }
+
+      if (this.plugin.settings.openNoteAfterProcessing && result.note_path) {
+        await this.plugin.openVaultPathFromAbsolutePath(result.note_path);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -374,7 +496,11 @@ class TranscriptProcessModal extends Modal {
         course: this.state.course,
         theme: this.state.theme,
       });
+      this.setProgress({ progress: 100, stage: "failed", message, status: "failed", error: message });
       new Notice("Transkript-Pipeline fehlgeschlagen.");
+      if (currentPollToken === this.pollToken) {
+        this.onOpen();
+      }
     } finally {
       this.setBusy(false);
     }
@@ -502,19 +628,20 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
 
         try {
           new Notice(`Starte Verarbeitung fuer ${latest.name}...`);
-          const result = await this.processLecture(payload);
+          const result = await this.runLectureJob(payload);
           await this.recordLastRun({
             timestamp: new Date().toISOString(),
+            jobId: result.job_id,
             status: "completed",
-            notePath: result.paths.note_path,
-            transcriptPath: result.paths.transcript_markdown_path,
+            notePath: result.note_path,
+            transcriptPath: result.transcript_path,
             audioPath: latest.path,
             course,
             theme: payload.theme,
           });
           new Notice(`Verarbeitung abgeschlossen: ${payload.theme}`);
           if (this.settings.openNoteAfterProcessing) {
-            await this.openNoteFromAbsolutePath(result.paths.note_path);
+            await this.openVaultPathFromAbsolutePath(result.note_path);
           }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
@@ -558,6 +685,8 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
 
   async recordLastRun(payload) {
     this.settings.lastRun = payload;
+    const history = Array.isArray(this.settings.jobHistory) ? this.settings.jobHistory : [];
+    this.settings.jobHistory = [payload, ...history.filter((entry) => entry.timestamp !== payload.timestamp)].slice(0, 12);
     await this.saveSettings();
   }
 
@@ -622,7 +751,67 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
     return response.json;
   }
 
-  async openNoteFromAbsolutePath(absolutePath) {
+  async startLectureJob(payload) {
+    const response = await requestUrl({
+      url: `${this.settings.backendUrl}/jobs`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (response.status >= 400) {
+      throw new Error(response.text || `Backend-Fehler ${response.status}`);
+    }
+    return response.json;
+  }
+
+  async getJobStatus(jobId) {
+    const response = await requestUrl({
+      url: `${this.settings.backendUrl}/jobs/${jobId}`,
+      method: "GET",
+    });
+    if (response.status >= 400) {
+      throw new Error(response.text || `Job-Status konnte nicht geladen werden (${response.status})`);
+    }
+    return response.json;
+  }
+
+  async runLectureJob(payload, onUpdate) {
+    const handle = await this.startLectureJob(payload);
+    if (onUpdate) {
+      onUpdate(handle);
+    }
+
+    while (true) {
+      const snapshot = await this.getJobStatus(handle.job_id);
+      if (onUpdate) {
+        onUpdate(snapshot);
+      }
+      if (snapshot.status === "completed") {
+        return snapshot;
+      }
+      if (snapshot.status === "failed") {
+        throw new Error(snapshot.error || snapshot.message || "Job fehlgeschlagen.");
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 900));
+    }
+  }
+
+  async openVaultPathFromRelativeOrAbsolute(pathLike) {
+    if (!pathLike) {
+      return;
+    }
+    if (pathLike.startsWith("/") || /^[A-Za-z]:[\\/]/.test(pathLike)) {
+      return this.openVaultPathFromAbsolutePath(pathLike);
+    }
+    const file = this.app.vault.getAbstractFileByPath(pathLike);
+    if (!file) {
+      new Notice(`Datei nicht im Vault gefunden: ${pathLike}`);
+      return;
+    }
+    await this.app.workspace.getLeaf(true).openFile(file);
+  }
+
+  async openVaultPathFromAbsolutePath(absolutePath) {
     const adapter = this.app.vault.adapter;
     if (!(adapter instanceof FileSystemAdapter)) {
       return;
@@ -641,5 +830,9 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
     }
 
     await this.app.workspace.getLeaf(true).openFile(file);
+  }
+
+  async openNoteFromAbsolutePath(absolutePath) {
+    await this.openVaultPathFromAbsolutePath(absolutePath);
   }
 };

@@ -145,6 +145,12 @@
   gap: 1rem;
 }
 
+.transcript-gui-history-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
 .transcript-gui-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
@@ -287,6 +293,54 @@
   gap: 0.9rem;
 }
 
+.transcript-gui-progress {
+  padding: 0.95rem 1rem;
+  border-radius: var(--transcript-gui-radius-lg);
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 82%, transparent);
+  background: color-mix(in srgb, var(--background-secondary) 82%, transparent);
+}
+
+.transcript-gui-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.transcript-gui-progress-stage {
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+
+.transcript-gui-progress-percent {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.transcript-gui-progress-track {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--background-primary) 78%, transparent);
+}
+
+.transcript-gui-progress-bar {
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--interactive-accent), color-mix(in srgb, var(--interactive-accent) 72%, white));
+  transition: width 220ms ease;
+}
+
+.transcript-gui-progress-message {
+  margin-top: 0.65rem;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
 .transcript-gui-status {
   padding: 0.9rem 1rem;
   white-space: pre-wrap;
@@ -311,12 +365,76 @@
   cursor: not-allowed;
 }
 
+.transcript-gui-history-card {
+  padding: 0.95rem 1rem;
+  border-radius: var(--transcript-gui-radius-md);
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 82%, transparent);
+  background: color-mix(in srgb, var(--background-primary) 58%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.transcript-gui-history-card.is-error {
+  border-color: color-mix(in srgb, var(--color-red) 35%, var(--background-modifier-border));
+}
+
+.transcript-gui-history-card.is-success {
+  border-color: color-mix(in srgb, var(--color-green) 28%, var(--background-modifier-border));
+}
+
+.transcript-gui-history-title {
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.transcript-gui-history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.transcript-gui-history-meta span {
+  padding: 0.25rem 0.5rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background-secondary) 78%, transparent);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.transcript-gui-history-path {
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.transcript-gui-history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.transcript-gui-history-link {
+  min-height: 34px;
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 85%, transparent);
+  background: color-mix(in srgb, var(--background-secondary) 88%, transparent);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
 @media (max-width: 900px) {
   .transcript-gui-modal-host .modal {
     width: min(100vw - 1.5rem, 760px);
   }
 
   .transcript-gui-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .transcript-gui-history-grid {
     grid-template-columns: 1fr;
   }
 }
