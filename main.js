@@ -268,6 +268,7 @@ class TranscriptProcessModal extends Modal {
       audioInputEl.addEventListener("input", (event) => {
         this.state.audioPath = event.target.value.trim();
       });
+      audioInputEl.addEventListener("change", () => this.onOpen());
 
       const audioActionsEl = sourceSectionEl.createDiv({ cls: "transcript-gui-inline-actions" });
       this.createActionButton(audioActionsEl, "Neueste Inbox-Datei", async () => {
@@ -302,6 +303,7 @@ class TranscriptProcessModal extends Modal {
       transcriptInputEl.addEventListener("input", (event) => {
         this.state.transcriptPath = event.target.value.trim();
       });
+      transcriptInputEl.addEventListener("change", () => this.onOpen());
 
       const transcriptActionsEl = sourceSectionEl.createDiv({ cls: "transcript-gui-inline-actions" });
       this.createActionButton(transcriptActionsEl, "Aktuelle Note nutzen", async () => {
@@ -343,6 +345,7 @@ class TranscriptProcessModal extends Modal {
     courseInputEl.addEventListener("input", (event) => {
       this.state.course = event.target.value.trim();
     });
+    courseInputEl.addEventListener("change", () => this.onOpen());
     const courseListEl = contextSectionEl.createEl("datalist", { attr: { id: this.courseListId } });
     for (const course of this.plugin.settings.courseOptions) {
       const optionEl = courseListEl.createEl("option");
@@ -357,6 +360,7 @@ class TranscriptProcessModal extends Modal {
     themeInputEl.addEventListener("input", (event) => {
       this.state.theme = event.target.value.trim();
     });
+    themeInputEl.addEventListener("change", () => this.onOpen());
 
     const metaGridEl = detailsSectionEl.createDiv({ cls: "transcript-gui-meta-grid" });
     const dateFieldEl = this.createField(metaGridEl, "Datum");
@@ -366,6 +370,7 @@ class TranscriptProcessModal extends Modal {
     dateInputEl.addEventListener("input", (event) => {
       this.state.date = event.target.value.trim();
     });
+    dateInputEl.addEventListener("change", () => this.onOpen());
 
     const typeFieldEl = this.createField(metaGridEl, "Sitzungstyp");
     const typeSelectEl = typeFieldEl.createEl("select", { cls: "transcript-gui-select" });
