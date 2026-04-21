@@ -198,6 +198,10 @@ class TranscriptProcessModal extends Modal {
     this.progressPercentEl = null;
     this.progressStageEl = null;
     this.progressMessageEl = null;
+    this.activeJobs = [];
+    this.activeJobsSectionEl = null;
+    this.activeJobsListEl = null;
+    this.activeJobsPollIntervalId = null;
     this.pollToken = 0;
     this.lastTranscriptAutofillPath = "";
     this.isAutofillingTranscript = false;
@@ -422,6 +426,14 @@ class TranscriptProcessModal extends Modal {
 
     const asideStackEl = asideColumnEl.createDiv({ cls: "transcript-gui-sticky-stack" });
 
+    this.activeJobsSectionEl = this.createSection(
+      asideStackEl,
+      "Aktive Jobs",
+      "Laufende Jobs bleiben sichtbar, auch wenn du das Fenster zwischendurch schliesst."
+    );
+    this.activeJobsListEl = this.activeJobsSectionEl.createDiv({ cls: "transcript-gui-active-jobs-list" });
+    this.renderActiveJobs();
+
     const summarySectionEl = this.createSection(
       asideStackEl,
       "Ueberblick",
@@ -519,6 +531,8 @@ class TranscriptProcessModal extends Modal {
     this.statusEl = footerEl.createDiv({ cls: "transcript-gui-status" });
     this.setStatus(this.statusMessage, this.statusKind);
     this.setProgress(this.progressSnapshot);
+    this.startActiveJobsPolling();
+    void this.refreshActiveJobs();
 
     if (this.state.sourceMode === "transcript" && this.state.transcriptPath && !this.isAutofillingTranscript && this.state.transcriptPath !== this.lastTranscriptAutofillPath) {
       void this.autofillFromTranscriptPath(this.state.transcriptPath);
@@ -527,6 +541,7 @@ class TranscriptProcessModal extends Modal {
 
   onClose() {
     this.pollToken += 1;
+    this.stopActiveJobsPolling();
     this.modalEl.removeClass("transcript-gui-modal-host");
     this.modalEl.style.removeProperty("width");
     this.modalEl.style.removeProperty("max-width");
@@ -582,6 +597,11 @@ class TranscriptProcessModal extends Modal {
     return emptyEl;
   }
 
+  createJobStatusPill(parentEl, snapshot) {
+    const label = snapshot.cancellation_requested ? "abbrechen..." : this.formatStage(snapshot.stage, snapshot.status);
+    return parentEl.createSpan({ cls: `transcript-gui-job-pill ${snapshot.status || "running"}`, text: label });
+  }
+
   getSelectedSourcePath() {
     return this.state.sourceMode === "audio" ? this.state.audioPath : this.state.transcriptPath;
   }
@@ -591,6 +611,102 @@ class TranscriptProcessModal extends Modal {
       return "Rohtranskript";
     }
     return this.plugin.isVideoPath(this.state.audioPath) ? "Video (nur Tonspur)" : "Audio-Datei";
+  }
+
+  getJobTitle(snapshot) {
+    return snapshot?.request?.theme || snapshot?.request?.audio_path || snapshot?.request?.transcript_path || snapshot?.job_id || "Aktiver Job";
+  }
+
+  renderActiveJobs() {
+    if (!this.activeJobsListEl) {
+      return;
+    }
+    this.activeJobsListEl.empty();
+    if (!this.activeJobs.length) {
+      this.createEmptyState(
+        this.activeJobsListEl,
+        "Keine laufenden Jobs",
+        "Sobald eine Verarbeitung aktiv ist, erscheint sie hier mit Fortschritt und Abbrechen-Aktion.",
+        "is-compact"
+      );
+      return;
+    }
+
+    this.activeJobs.forEach((snapshot) => {
+      const cardEl = this.activeJobsListEl.createDiv({ cls: "transcript-gui-active-job-card" });
+      const headEl = cardEl.createDiv({ cls: "transcript-gui-active-job-head" });
+      headEl.createDiv({ cls: "transcript-gui-active-job-title", text: this.getJobTitle(snapshot) });
+      this.createJobStatusPill(headEl, snapshot);
+
+      const metaEl = cardEl.createDiv({ cls: "transcript-gui-active-job-meta" });
+      if (snapshot.request?.course) {
+        metaEl.createSpan({ text: String(snapshot.request.course).replaceAll("_", " ") });
+      }
+      if (snapshot.request?.session_type) {
+        metaEl.createSpan({ text: snapshot.request.session_type });
+      }
+      metaEl.createSpan({ text: `${Number(snapshot.progress || 0)}%` });
+
+      const trackEl = cardEl.createDiv({ cls: "transcript-gui-progress-track is-compact" });
+      trackEl.createDiv({ cls: "transcript-gui-progress-bar", attr: { style: `width:${Math.max(0, Math.min(100, Number(snapshot.progress || 0)))}%` } });
+
+      cardEl.createDiv({ cls: "transcript-gui-active-job-message", text: snapshot.error || snapshot.message || "Warte auf Status..." });
+
+      const actionsEl = cardEl.createDiv({ cls: "transcript-gui-active-job-actions" });
+      const cancelLabel = snapshot.cancellation_requested ? "Abbruch angefordert" : "Job abbrechen";
+      const cancelButtonEl = actionsEl.createEl("button", { text: cancelLabel, cls: "transcript-gui-history-link", attr: { title: cancelLabel } });
+      cancelButtonEl.disabled = Boolean(snapshot.cancellation_requested);
+      cancelButtonEl.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        await this.cancelActiveJob(snapshot.job_id);
+      });
+    });
+  }
+
+  startActiveJobsPolling() {
+    this.stopActiveJobsPolling();
+    this.activeJobsPollIntervalId = window.setInterval(() => {
+      void this.refreshActiveJobs();
+    }, 1200);
+  }
+
+  stopActiveJobsPolling() {
+    if (this.activeJobsPollIntervalId) {
+      window.clearInterval(this.activeJobsPollIntervalId);
+      this.activeJobsPollIntervalId = null;
+    }
+  }
+
+  async refreshActiveJobs() {
+    try {
+      const jobs = await this.plugin.getActiveLectureJobs();
+      this.activeJobs = Array.isArray(jobs) ? jobs : [];
+      this.renderActiveJobs();
+      if (!this.isSubmitting) {
+        if (this.activeJobs.length > 0) {
+          const primaryJob = this.activeJobs[0];
+          this.setProgress(primaryJob);
+          this.setStatus(`${this.formatStage(primaryJob.stage, primaryJob.status)} (${primaryJob.progress || 0}%)\n${primaryJob.message || ""}`.trim(), "neutral");
+        } else if (this.progressSnapshot.status !== "idle") {
+          this.setProgress({ progress: 0, stage: "idle", message: "Noch kein Job aktiv.", status: "idle" });
+          this.setStatus("Bereit.", "neutral");
+        }
+      }
+    } catch (_error) {
+      this.activeJobs = [];
+      this.renderActiveJobs();
+    }
+  }
+
+  async cancelActiveJob(jobId) {
+    try {
+      await this.plugin.cancelLectureJob(jobId);
+      await this.refreshActiveJobs();
+      new Notice("Job-Abbruch angefordert.");
+    } catch (error) {
+      new Notice(`Job konnte nicht abgebrochen werden: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   renderHistoryEntry(parentEl, entry) {
@@ -1447,6 +1563,31 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
     });
     if (response.status >= 400) {
       throw new Error(response.text || `Job-Status konnte nicht geladen werden (${response.status})`);
+    }
+    return response.json;
+  }
+
+  async getActiveLectureJobs() {
+    await this.ensureBackendAvailable();
+    const response = await requestUrl({
+      url: `${this.settings.backendUrl}/jobs`,
+      method: "GET",
+    });
+    if (response.status >= 400) {
+      throw new Error(response.text || `Aktive Jobs konnten nicht geladen werden (${response.status})`);
+    }
+    return response.json?.jobs || [];
+  }
+
+  async cancelLectureJob(jobId) {
+    await this.ensureBackendAvailable();
+    const response = await requestUrl({
+      url: `${this.settings.backendUrl}/jobs/${jobId}/cancel`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (response.status >= 400) {
+      throw new Error(response.text || `Job konnte nicht abgebrochen werden (${response.status})`);
     }
     return response.json;
   }

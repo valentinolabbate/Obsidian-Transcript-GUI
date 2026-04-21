@@ -320,6 +320,82 @@
   word-break: break-word;
 }
 
+.transcript-gui-active-jobs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.transcript-gui-active-job-card {
+  padding: 0.9rem 0.95rem;
+  border-radius: var(--transcript-gui-radius-md);
+  border: 1px solid color-mix(in srgb, var(--interactive-accent) 16%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--background-primary) 60%, transparent);
+}
+
+.transcript-gui-active-job-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.transcript-gui-active-job-title {
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.transcript-gui-job-pill {
+  flex: 0 0 auto;
+  padding: 0.26rem 0.52rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background-secondary) 80%, transparent);
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.transcript-gui-job-pill.running,
+.transcript-gui-job-pill.queued,
+.transcript-gui-job-pill.cancelling {
+  background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+  color: var(--text-normal);
+}
+
+.transcript-gui-active-job-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+}
+
+.transcript-gui-active-job-meta span {
+  padding: 0.22rem 0.48rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background-secondary) 80%, transparent);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.transcript-gui-progress-track.is-compact {
+  margin-top: 0.7rem;
+  height: 8px;
+}
+
+.transcript-gui-active-job-message {
+  margin-top: 0.6rem;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.transcript-gui-active-job-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+
 .transcript-gui-empty-state {
   padding: 0.9rem 0.95rem;
   border-radius: var(--transcript-gui-radius-md);
