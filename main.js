@@ -2105,40 +2105,73 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
       .filter(Boolean)
       .join(":");
 
-    // Pre-flight check: ensure executable works before spawning detached
+    const logPath = path.join(installDir, "backend.log");
+
+    // Pre-flight check: ensure executable works before spawning
     try {
       await execPromise(`"${executable}" --help`, { cwd: installDir, env: { ...process.env, PATH: patchedPath } });
     } catch (_error) {
       throw new Error("Backend-Installation scheint beschädigt zu sein. Versuche eine Neuinstallation über die Plugin-Einstellungen.");
     }
 
-    const logPath = path.join(installDir, "backend.log");
-    const logStream = fs.createWriteStream(logPath, { flags: "a" });
-    logStream.write(`\n--- Backend started at ${new Date().toISOString()} (PID: ${this.lastBackendPid || "unknown"}) ---\n`);
-
-    const command = `"${executable}" serve --host 127.0.0.1 --port 8765`;
-    const child = spawn(command, {
+    const args = ["serve", "--host", "127.0.0.1", "--port", "8765"];
+    const child = spawn(executable, args, {
       cwd: installDir,
-      shell: true,
-      detached: true,
-      stdio: ["ignore", logStream, logStream],
       env: { ...process.env, PATH: patchedPath },
+      stdio: ["ignore", "pipe", "pipe"],
     });
-    child.unref();
+
     this.lastBackendPid = child.pid;
+
+    // Collect stdout/stderr into log file and memory buffer
+    const logStream = fs.createWriteStream(logPath, { flags: "a" });
+    logStream.write(`\n--- Backend started at ${new Date().toISOString()} (PID: ${child.pid}) ---\n`);
+
+    const logBuffer = [];
+    const appendLog = (data) => {
+      const text = data.toString();
+      logBuffer.push(text);
+      if (logBuffer.length > 100) logBuffer.shift();
+      logStream.write(text);
+    };
+
+    child.stdout?.on("data", appendLog);
+    child.stderr?.on("data", appendLog);
+
+    let exitError = null;
+    child.on("error", (err) => {
+      exitError = err;
+      logStream.write(`[spawn error] ${err.message}\n`);
+    });
+    child.on("exit", (code) => {
+      logStream.write(`[exit] code=${code}\n`);
+      if (code !== 0 && code !== null) {
+        exitError = new Error(`Backend-Prozess beendet mit Code ${code}`);
+      }
+    });
 
     const timeoutMs = 30000;
     const startedAt = Date.now();
     while (Date.now() - startedAt < timeoutMs) {
       await new Promise((resolve) => window.setTimeout(resolve, 750));
+
+      if (exitError) {
+        logStream.end();
+        const recentLog = logBuffer.slice(-20).join("");
+        throw new Error(`Backend konnte nicht gestartet werden: ${exitError.message}\n\nLetzte Log-Einträge:\n${recentLog}\n\nVollständiges Log: ${logPath}`);
+      }
+
       try {
         await this.fetchBackendHealth();
+        logStream.end();
         return;
       } catch (_error) {
         // wait until backend responds or timeout expires
       }
     }
 
-    throw new Error(`Backend konnte nicht rechtzeitig gestartet werden. Prüfe das Log: ${logPath}`);
+    logStream.end();
+    const recentLog = logBuffer.slice(-20).join("");
+    throw new Error(`Backend konnte nicht rechtzeitig gestartet werden.\n\nLetzte Log-Einträge:\n${recentLog}\n\nVollständiges Log: ${logPath}`);
   }
 };
