@@ -1961,11 +1961,13 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
 
       notice.setMessage("Backend-Abhängigkeiten werden installiert (das kann einige Minuten dauern)...");
       const pip = path.join(installDir, ".venv", "bin", "pip");
-      await execPromise(`"${pip}" install -e "${sourceDir}"`, { cwd: installDir });
+      // Note: we intentionally do NOT use -e (editable) because we delete sourceDir afterwards.
+      // A normal install copies the package into the venv so it survives sourceDir cleanup.
+      await execPromise(`"${pip}" install "${sourceDir}"`, { cwd: installDir });
 
       // Optional audio dependencies
       try {
-        await execPromise(`"${pip}" install -e "${sourceDir}[audio]"`, { cwd: installDir });
+        await execPromise(`"${pip}" install "${sourceDir}[audio]"`, { cwd: installDir });
       } catch (_error) {
         // Audio dependencies are optional; log silently
       }
