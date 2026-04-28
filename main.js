@@ -22,7 +22,7 @@ const MEDIA_EXTENSIONS = new Set([...AUDIO_EXTENSIONS, ...VIDEO_EXTENSIONS]);
 
 const BACKEND_REPO_OWNER = "valentinolabbate";
 const BACKEND_REPO_NAME = "Obsidian-Transcript-Server";
-const BACKEND_VERSION = "0.2.3";
+const BACKEND_VERSION = "0.2.4";
 const BACKEND_DOWNLOAD_URL = `https://github.com/${BACKEND_REPO_OWNER}/${BACKEND_REPO_NAME}/archive/refs/tags/v${BACKEND_VERSION}.tar.gz`;
 
 const DEFAULT_SESSION_PROFILES = [
@@ -424,6 +424,7 @@ function readBackendEnv(app) {
     LECTURE_PIPELINE_LM_STUDIO_MODEL: "qwen/qwen3.6-35b-a3b",
     LECTURE_PIPELINE_TRANSCRIPTION_MODEL: "mlx-community/whisper-large-v3-turbo",
     LECTURE_PIPELINE_CHUNK_TARGET_CHARS: "14000",
+    LECTURE_PIPELINE_REQUEST_TIMEOUT_SECONDS: "1800",
     LECTURE_PIPELINE_IDLE_SHUTDOWN_SECONDS: "900",
     HF_TOKEN: "",
   };
@@ -456,6 +457,7 @@ function writeBackendEnv(installDir, vaultRoot, overrides = {}) {
     `LECTURE_PIPELINE_LM_STUDIO_MODEL=${overrides.lmStudioModel || "qwen/qwen3.6-35b-a3b"}`,
     `LECTURE_PIPELINE_TRANSCRIPTION_MODEL=${overrides.transcriptionModel || "mlx-community/whisper-large-v3-turbo"}`,
     `LECTURE_PIPELINE_CHUNK_TARGET_CHARS=${overrides.chunkTargetChars || "14000"}`,
+    `LECTURE_PIPELINE_REQUEST_TIMEOUT_SECONDS=${overrides.requestTimeoutSeconds || "1800"}`,
     `LECTURE_PIPELINE_IDLE_SHUTDOWN_SECONDS=${overrides.idleShutdownSeconds || "900"}`,
     `HF_TOKEN=${overrides.hfToken || ""}`,
   ];
@@ -1344,6 +1346,7 @@ class TranscriptGuiSettingTab extends PluginSettingTab {
           lmStudioModel: env.LECTURE_PIPELINE_LM_STUDIO_MODEL,
           transcriptionModel: env.LECTURE_PIPELINE_TRANSCRIPTION_MODEL,
           chunkTargetChars: env.LECTURE_PIPELINE_CHUNK_TARGET_CHARS,
+          requestTimeoutSeconds: env.LECTURE_PIPELINE_REQUEST_TIMEOUT_SECONDS,
           idleShutdownSeconds: env.LECTURE_PIPELINE_IDLE_SHUTDOWN_SECONDS,
           hfToken: env.HF_TOKEN,
         });
@@ -1399,6 +1402,18 @@ class TranscriptGuiSettingTab extends PluginSettingTab {
           text.setValue(env.LECTURE_PIPELINE_CHUNK_TARGET_CHARS || "14000");
           text.onChange((value) => {
             env.LECTURE_PIPELINE_CHUNK_TARGET_CHARS = value.trim();
+            saveEnv();
+          });
+        });
+
+      new Setting(containerEl)
+        .setName("LM Studio Antwort-Timeout (Sekunden)")
+        .setDesc("Maximale Wartezeit fuer eine einzelne LLM-Antwort. Bei grossen lokalen Modellen hoeher setzen.")
+        .addText((text) => {
+          text.setPlaceholder("1800");
+          text.setValue(env.LECTURE_PIPELINE_REQUEST_TIMEOUT_SECONDS || "1800");
+          text.onChange((value) => {
+            env.LECTURE_PIPELINE_REQUEST_TIMEOUT_SECONDS = value.trim();
             saveEnv();
           });
         });
