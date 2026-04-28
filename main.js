@@ -22,7 +22,7 @@ const MEDIA_EXTENSIONS = new Set([...AUDIO_EXTENSIONS, ...VIDEO_EXTENSIONS]);
 
 const BACKEND_REPO_OWNER = "valentinolabbate";
 const BACKEND_REPO_NAME = "Obsidian-Transcript-Server";
-const BACKEND_VERSION = "0.2.7";
+const BACKEND_VERSION = "0.2.8";
 const BACKEND_DOWNLOAD_URL = `https://github.com/${BACKEND_REPO_OWNER}/${BACKEND_REPO_NAME}/archive/refs/tags/v${BACKEND_VERSION}.tar.gz`;
 
 const DEFAULT_SESSION_PROFILES = [
@@ -206,6 +206,15 @@ function getBackendListenOptions(backendUrl) {
     return { host: host || "127.0.0.1", port };
   } catch (_error) {
     return { host: "127.0.0.1", port: "8765" };
+  }
+}
+
+function getBackendOrigin(backendUrl) {
+  try {
+    const parsed = new URL(backendUrl || DEFAULT_SETTINGS.backendUrl);
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch (_error) {
+    return DEFAULT_SETTINGS.backendUrl;
   }
 }
 
@@ -2392,7 +2401,15 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
   }
 
   async stopManagedBackendProcess() {
+    try {
+      await requestUrl({ url: `${getBackendOrigin(this.settings.backendUrl)}/shutdown`, method: "POST" });
+      await new Promise((resolve) => window.setTimeout(resolve, 800));
+    } catch (_error) {
+      // Older backends do not expose /shutdown.
+    }
+
     if (!this.lastBackendPid) {
+      await this.stopBackendProcessOnConfiguredPort();
       return;
     }
     const pid = this.lastBackendPid;
@@ -2403,6 +2420,34 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
       await new Promise((resolve) => window.setTimeout(resolve, 600));
     } catch (_error) {
       // Process already gone or not owned by this Obsidian session.
+    }
+    await this.stopBackendProcessOnConfiguredPort();
+  }
+
+  async stopBackendProcessOnConfiguredPort() {
+    const listenOptions = getBackendListenOptions(this.settings.backendUrl);
+    if (!["127.0.0.1", "localhost", "::1"].includes(listenOptions.host)) {
+      return;
+    }
+    const port = String(listenOptions.port || "").trim();
+    if (!/^\d+$/.test(port)) {
+      return;
+    }
+    try {
+      const { stdout } = await execPromise(`lsof -ti tcp:${port} -sTCP:LISTEN`);
+      const pids = stdout.split(/\s+/).map((pid) => pid.trim()).filter(Boolean);
+      for (const pid of pids) {
+        try {
+          process.kill(Number(pid), "SIGTERM");
+        } catch (_error) {
+          // ignore
+        }
+      }
+      if (pids.length > 0) {
+        await new Promise((resolve) => window.setTimeout(resolve, 800));
+      }
+    } catch (_error) {
+      // lsof is best-effort; backend may already be stopped.
     }
   }
 
