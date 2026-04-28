@@ -22,8 +22,8 @@ const MEDIA_EXTENSIONS = new Set([...AUDIO_EXTENSIONS, ...VIDEO_EXTENSIONS]);
 
 const BACKEND_REPO_OWNER = "valentinolabbate";
 const BACKEND_REPO_NAME = "Obsidian-Transcript-Server";
-const BACKEND_BRANCH = "main";
-const BACKEND_DOWNLOAD_URL = `https://github.com/${BACKEND_REPO_OWNER}/${BACKEND_REPO_NAME}/archive/refs/heads/${BACKEND_BRANCH}.tar.gz`;
+const BACKEND_VERSION = "0.2.2";
+const BACKEND_DOWNLOAD_URL = `https://github.com/${BACKEND_REPO_OWNER}/${BACKEND_REPO_NAME}/archive/refs/tags/v${BACKEND_VERSION}.tar.gz`;
 
 const DEFAULT_SESSION_PROFILES = [
   {
@@ -2303,7 +2303,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
       fs.unlinkSync(tarPath);
       fs.rmSync(sourceDir, { recursive: true, force: true });
 
-      this.settings.backendVersion = "0.2.2";
+      this.settings.backendVersion = BACKEND_VERSION;
       await this.saveSettings();
 
       notice.hide();
@@ -2332,7 +2332,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
   async checkBackendUpdateAvailable() {
     // For now, we compare against a hardcoded remote version.
     // In the future this could fetch package.json or a VERSION file from the repo.
-    const remoteVersion = "0.2.2";
+    const remoteVersion = BACKEND_VERSION;
     return this.settings.backendVersion !== remoteVersion;
   }
 
