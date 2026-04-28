@@ -22,7 +22,7 @@ const MEDIA_EXTENSIONS = new Set([...AUDIO_EXTENSIONS, ...VIDEO_EXTENSIONS]);
 
 const BACKEND_REPO_OWNER = "valentinolabbate";
 const BACKEND_REPO_NAME = "Obsidian-Transcript-Server";
-const BACKEND_VERSION = "0.2.4";
+const BACKEND_VERSION = "0.2.5";
 const BACKEND_DOWNLOAD_URL = `https://github.com/${BACKEND_REPO_OWNER}/${BACKEND_REPO_NAME}/archive/refs/tags/v${BACKEND_VERSION}.tar.gz`;
 
 const DEFAULT_SESSION_PROFILES = [
