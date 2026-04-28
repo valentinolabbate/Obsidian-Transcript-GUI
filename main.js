@@ -285,26 +285,39 @@ function execPromise(command, options = {}) {
   });
 }
 
-function downloadFile(url, destPath) {
+function downloadFile(url, destPath, redirects = 0) {
   return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(destPath);
     https.get(url, { headers: { "User-Agent": "obsidian-transcript-gui" } }, (response) => {
-      if (response.statusCode === 301 || response.statusCode === 302) {
+      const statusCode = response.statusCode || 0;
+      if ([301, 302, 303, 307, 308].includes(statusCode)) {
         response.resume();
-        file.close(() => fs.unlink(destPath, () => {}));
+        if (redirects >= 5) {
+          reject(new Error("Download failed: too many redirects."));
+          return;
+        }
         const location = response.headers.location ? new URL(response.headers.location, url).toString() : "";
         if (!location) {
           reject(new Error("Download redirect without location."));
           return;
         }
-        return downloadFile(location, destPath).then(resolve).catch(reject);
+        return downloadFile(location, destPath, redirects + 1).then(resolve).catch(reject);
       }
-      if (response.statusCode !== 200) {
+      if (statusCode !== 200) {
         response.resume();
-        file.close(() => fs.unlink(destPath, () => {}));
-        reject(new Error(`Download failed: ${response.statusCode}`));
+        reject(new Error(`Download failed: ${statusCode}`));
         return;
       }
+
+      const file = fs.createWriteStream(destPath);
+      file.on("error", (error) => {
+        response.destroy();
+        fs.unlink(destPath, () => {});
+        reject(error);
+      });
+      response.on("error", (error) => {
+        file.close(() => fs.unlink(destPath, () => {}));
+        reject(error);
+      });
       response.pipe(file);
       file.on("finish", () => {
         file.close();
