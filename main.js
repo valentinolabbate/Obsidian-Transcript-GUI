@@ -22,7 +22,7 @@ const MEDIA_EXTENSIONS = new Set([...AUDIO_EXTENSIONS, ...VIDEO_EXTENSIONS]);
 
 const BACKEND_REPO_OWNER = "valentinolabbate";
 const BACKEND_REPO_NAME = "Obsidian-Transcript-Server";
-const BACKEND_VERSION = "0.2.2";
+const BACKEND_VERSION = "0.2.3";
 const BACKEND_DOWNLOAD_URL = `https://github.com/${BACKEND_REPO_OWNER}/${BACKEND_REPO_NAME}/archive/refs/tags/v${BACKEND_VERSION}.tar.gz`;
 
 const DEFAULT_SESSION_PROFILES = [
@@ -1888,11 +1888,11 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
     if (!profile) {
       return payload;
     }
-    if (typeof profile.zusammenfassungs_stil === "string") {
-      payload.zusammenfassungs_stil = profile.zusammenfassungs_stil;
+    if (typeof profile.zusammenfassungs_stil === "string" && profile.zusammenfassungs_stil.trim()) {
+      payload.zusammenfassungs_stil = profile.zusammenfassungs_stil.trim();
     }
-    if (typeof profile.notiz_stil === "string") {
-      payload.notiz_stil = profile.notiz_stil;
+    if (typeof profile.notiz_stil === "string" && profile.notiz_stil.trim()) {
+      payload.notiz_stil = profile.notiz_stil.trim();
     }
     if (profile.lmStudioModel) {
       payload.lm_studio_model = profile.lmStudioModel;
