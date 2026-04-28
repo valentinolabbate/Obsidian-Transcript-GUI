@@ -136,6 +136,37 @@ function normalizeSessionProfiles(profiles) {
   return normalized.length > 0 ? normalized : fallback;
 }
 
+function normalizePromptProfiles(profiles) {
+  const fallback = DEFAULT_PROMPT_PROFILES.map((profile) => ({ ...profile }));
+  if (!Array.isArray(profiles) || profiles.length === 0) {
+    return fallback;
+  }
+
+  const normalized = [];
+  const seen = new Set();
+  profiles.forEach((profile, index) => {
+    const fallbackProfile = fallback[index] || fallback[0];
+    const id = String(profile?.id || fallbackProfile.id || `profile_${index + 1}`).trim();
+    if (!id || seen.has(id)) {
+      return;
+    }
+    seen.add(id);
+    const temperature = profile?.temperature ?? fallbackProfile.temperature ?? 0.1;
+    const topP = profile?.topP ?? profile?.top_p ?? fallbackProfile.topP ?? 0.8;
+    normalized.push({
+      id,
+      name: String(profile?.name || fallbackProfile.name || `Profil ${index + 1}`).trim(),
+      zusammenfassungs_stil: String(profile?.zusammenfassungs_stil ?? fallbackProfile.zusammenfassungs_stil ?? ""),
+      notiz_stil: String(profile?.notiz_stil ?? fallbackProfile.notiz_stil ?? ""),
+      lmStudioModel: String(profile?.lmStudioModel || profile?.lm_studio_model || fallbackProfile.lmStudioModel || "").trim(),
+      temperature: Number.isFinite(Number(temperature)) ? Number(temperature) : 0.1,
+      topP: Number.isFinite(Number(topP)) ? Number(topP) : 0.8,
+    });
+  });
+
+  return normalized.length > 0 ? normalized : fallback;
+}
+
 function normalizeSpeakerLabelMode(value) {
   return value === "generic" ? "generic" : "professor";
 }
@@ -147,9 +178,7 @@ function normalizeSettings(data) {
   if (!settings.sessionProfiles.some((profile) => profile.name === settings.defaultSessionType)) {
     settings.defaultSessionType = settings.sessionProfiles[0].name;
   }
-  if (!Array.isArray(settings.promptProfiles) || settings.promptProfiles.length === 0) {
-    settings.promptProfiles = DEFAULT_PROMPT_PROFILES.map((profile) => ({ ...profile }));
-  }
+  settings.promptProfiles = normalizePromptProfiles(settings.promptProfiles);
   if (!settings.promptProfiles.some((profile) => profile.id === settings.defaultPromptProfile)) {
     settings.defaultPromptProfile = settings.promptProfiles[0]?.id || "vorlesung";
   }
@@ -165,7 +194,19 @@ function stripWrappedQuotes(value) {
 
 function extractWikiLinkTarget(value) {
   const match = String(value || "").match(/\[\[(.+?)\]\]/);
-  return match ? match[1].trim() : stripWrappedQuotes(value);
+  const target = match ? match[1].trim() : stripWrappedQuotes(value);
+  return target.split("|")[0].split("#")[0].trim();
+}
+
+function getBackendListenOptions(backendUrl) {
+  try {
+    const parsed = new URL(backendUrl || DEFAULT_SETTINGS.backendUrl);
+    const host = parsed.hostname === "localhost" ? "127.0.0.1" : parsed.hostname;
+    const port = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
+    return { host: host || "127.0.0.1", port };
+  } catch (_error) {
+    return { host: "127.0.0.1", port: "8765" };
+  }
 }
 
 function parseTranscriptStem(fileName) {
@@ -249,9 +290,18 @@ function downloadFile(url, destPath) {
     const file = fs.createWriteStream(destPath);
     https.get(url, { headers: { "User-Agent": "obsidian-transcript-gui" } }, (response) => {
       if (response.statusCode === 301 || response.statusCode === 302) {
-        return downloadFile(response.headers.location, destPath).then(resolve).catch(reject);
+        response.resume();
+        file.close(() => fs.unlink(destPath, () => {}));
+        const location = response.headers.location ? new URL(response.headers.location, url).toString() : "";
+        if (!location) {
+          reject(new Error("Download redirect without location."));
+          return;
+        }
+        return downloadFile(location, destPath).then(resolve).catch(reject);
       }
       if (response.statusCode !== 200) {
+        response.resume();
+        file.close(() => fs.unlink(destPath, () => {}));
         reject(new Error(`Download failed: ${response.statusCode}`));
         return;
       }
@@ -1063,6 +1113,8 @@ class TranscriptProcessModal extends Modal {
       note_render: "Notiz schreiben",
       completed: "Abgeschlossen",
       failed: "Fehlgeschlagen",
+      cancelling: "Abbruch laeuft",
+      cancelled: "Abgebrochen",
       idle: "Bereit",
     };
     return labels[stage] || stage || "Verarbeitung";
@@ -1102,29 +1154,17 @@ class TranscriptProcessModal extends Modal {
     this.setProgress({ progress: 0, stage: "queued", message: "Job wird an das Backend gesendet.", status: "queued" });
     const currentPollToken = ++this.pollToken;
 
-    const promptProfile = this.plugin.getPromptProfile(this.state.promptProfile);
     const payload = {
+      ...this.plugin.buildPromptPayload(this.state.promptProfile),
       course: this.state.course,
       date: this.state.date,
       session_type: this.state.sessionType,
       theme: this.state.theme,
-      prompt_profile: this.state.promptProfile,
       speaker_label_mode: normalizeSpeakerLabelMode(this.state.speakerLabelMode),
       template_path: this.plugin.getSessionProfile(this.state.sessionType)?.templatePath || undefined,
       storage_dir: this.plugin.getSessionProfile(this.state.sessionType)?.storageDir || undefined,
       output_dir: this.plugin.getSessionProfile(this.state.sessionType)?.outputDir || undefined,
     };
-    if (promptProfile) {
-      if (promptProfile.lmStudioModel) {
-        payload.lm_studio_model = promptProfile.lmStudioModel;
-      }
-      if (promptProfile.temperature != null) {
-        payload.temperature = promptProfile.temperature;
-      }
-      if (promptProfile.topP != null) {
-        payload.top_p = promptProfile.topP;
-      }
-    }
     if (this.state.sourceMode === "audio") {
       payload.audio_path = this.state.audioPath;
     } else {
@@ -1381,16 +1421,17 @@ class TranscriptGuiSettingTab extends PluginSettingTab {
           button.setButtonText("Backend neustarten");
           button.onClick(async () => {
             try {
-              await this.plugin.ensureBackendAvailable({ forceStart: true });
-              new Notice("Backend erfolgreich gestartet.", 4000);
+              await this.plugin.restartBackendProcess();
+              new Notice("Backend erfolgreich neu gestartet.", 4000);
             } catch (error) {
-              new Notice(`Backend konnte nicht gestartet werden: ${error instanceof Error ? error.message : String(error)}`, 8000);
+              new Notice(`Backend konnte nicht neu gestartet werden: ${error instanceof Error ? error.message : String(error)}`, 8000);
             }
           });
         });
     }
 
     new Setting(containerEl)
+      .setName("Inbox-Ordner")
       .setDesc("Hier sucht die GUI nach der neuesten Audio- oder Video-Datei.")
       .addText((text) => {
         text.setPlaceholder("99_Inbox/Audio");
@@ -1728,6 +1769,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
         const sessionProfile = this.getSessionProfile(this.settings.defaultSessionType);
 
         const payload = {
+          ...this.buildPromptPayload(this.settings.defaultPromptProfile),
           audio_path: latest.path,
           course,
           date: window.moment ? window.moment().format("YYYY-MM-DD") : new Date().toISOString().slice(0, 10),
@@ -1825,6 +1867,32 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
     return profiles.find((profile) => profile.id === id) || profiles[0] || DEFAULT_PROMPT_PROFILES[0];
   }
 
+  buildPromptPayload(id) {
+    const profile = this.getPromptProfile(id);
+    const payload = {
+      prompt_profile: profile?.id || id || "vorlesung",
+    };
+    if (!profile) {
+      return payload;
+    }
+    if (typeof profile.zusammenfassungs_stil === "string") {
+      payload.zusammenfassungs_stil = profile.zusammenfassungs_stil;
+    }
+    if (typeof profile.notiz_stil === "string") {
+      payload.notiz_stil = profile.notiz_stil;
+    }
+    if (profile.lmStudioModel) {
+      payload.lm_studio_model = profile.lmStudioModel;
+    }
+    if (profile.temperature != null) {
+      payload.temperature = profile.temperature;
+    }
+    if (profile.topP != null) {
+      payload.top_p = profile.topP;
+    }
+    return payload;
+  }
+
   async recordLastRun(payload) {
     this.settings.lastRun = payload;
     const history = Array.isArray(this.settings.jobHistory) ? this.settings.jobHistory : [];
@@ -1886,7 +1954,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
   }
 
   extractFrontmatterValue(text, key) {
-    const frontmatterMatch = String(text || "").match(/^---\n([\s\S]*?)\n---/);
+    const frontmatterMatch = String(text || "").match(/^---\r?\n([\s\S]*?)\r?\n---/);
     if (!frontmatterMatch) {
       return "";
     }
@@ -2067,6 +2135,9 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
       if (snapshot.status === "failed") {
         throw new Error(snapshot.error || snapshot.message || "Job fehlgeschlagen.");
       }
+      if (snapshot.status === "cancelled") {
+        throw new Error(snapshot.message || "Job wurde abgebrochen.");
+      }
       await new Promise((resolve) => window.setTimeout(resolve, 900));
     }
   }
@@ -2092,12 +2163,13 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
       return;
     }
 
-    const basePath = adapter.getBasePath();
-    if (!absolutePath.startsWith(basePath)) {
+    const basePath = path.resolve(adapter.getBasePath());
+    const resolvedPath = path.resolve(String(absolutePath || ""));
+    const relativePath = path.relative(basePath, resolvedPath).replace(/\\/g, "/");
+    if (!relativePath || relativePath.startsWith("../") || relativePath === ".." || path.isAbsolute(relativePath)) {
       return;
     }
 
-    const relativePath = absolutePath.slice(basePath.length).replace(/^[/\\]/, "").replace(/\\/g, "/");
     const file = this.app.vault.getAbstractFileByPath(relativePath);
     if (!file) {
       new Notice(`Datei nicht im Vault gefunden: ${relativePath}`);
@@ -2231,7 +2303,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
       fs.unlinkSync(tarPath);
       fs.rmSync(sourceDir, { recursive: true, force: true });
 
-      this.settings.backendVersion = "0.2.1";
+      this.settings.backendVersion = "0.2.2";
       await this.saveSettings();
 
       notice.hide();
@@ -2247,15 +2319,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
     const installDir = getBackendInstallDir(this.app);
     try {
       // Try to stop any running backend process
-      if (this.lastBackendPid) {
-        try {
-          process.kill(this.lastBackendPid, 0); // Check if process exists
-          process.kill(this.lastBackendPid, "SIGTERM");
-        } catch (_e) {
-          // Process already gone
-        }
-        this.lastBackendPid = null;
-      }
+      await this.stopManagedBackendProcess();
       fs.rmSync(installDir, { recursive: true, force: true });
       this.settings.backendVersion = "";
       await this.saveSettings();
@@ -2268,7 +2332,7 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
   async checkBackendUpdateAvailable() {
     // For now, we compare against a hardcoded remote version.
     // In the future this could fetch package.json or a VERSION file from the repo.
-    const remoteVersion = "0.2.1";
+    const remoteVersion = "0.2.2";
     return this.settings.backendVersion !== remoteVersion;
   }
 
@@ -2297,6 +2361,27 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
 
   getBackendExecutablePath() {
     return getBackendExecutablePath(this.app);
+  }
+
+  async stopManagedBackendProcess() {
+    if (!this.lastBackendPid) {
+      return;
+    }
+    const pid = this.lastBackendPid;
+    this.lastBackendPid = null;
+    try {
+      process.kill(pid, 0);
+      process.kill(pid, "SIGTERM");
+      await new Promise((resolve) => window.setTimeout(resolve, 600));
+    } catch (_error) {
+      // Process already gone or not owned by this Obsidian session.
+    }
+  }
+
+  async restartBackendProcess() {
+    await this.stopManagedBackendProcess();
+    await this.startBackendProcess();
+    return this.fetchBackendHealth();
   }
 
   // ── Backend Communication ────────────────────────────────────────────────
@@ -2353,7 +2438,8 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
     // Ensure log file exists before spawning
     fs.writeFileSync(logPath, `\n--- Backend started at ${new Date().toISOString()} ---\n`, { flag: "a" });
 
-    const args = ["serve", "--host", "127.0.0.1", "--port", "8765"];
+    const listenOptions = getBackendListenOptions(this.settings.backendUrl);
+    const args = ["serve", "--host", listenOptions.host, "--port", listenOptions.port];
     const child = spawn(executable, args, {
       cwd: installDir,
       env: { ...process.env, PATH: patchedPath },
@@ -2382,6 +2468,10 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
     });
     child.on("exit", (code) => {
       logStream.write(`[exit] code=${code}\n`);
+      logStream.end();
+      if (this.lastBackendPid === child.pid) {
+        this.lastBackendPid = null;
+      }
       if (code !== 0 && code !== null) {
         exitError = new Error(`Backend-Prozess beendet mit Code ${code}`);
       }
@@ -2393,14 +2483,12 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
     // Check immediately, then every 750ms
     do {
       if (exitError) {
-        logStream.end();
         const recentLog = logBuffer.slice(-20).join("");
         throw new Error(`Backend konnte nicht gestartet werden: ${exitError.message}\n\nLetzte Log-Einträge:\n${recentLog}\n\nVollständiges Log: ${logPath}`);
       }
 
       try {
         await this.fetchBackendHealth();
-        logStream.end();
         return;
       } catch (_error) {
         // wait until backend responds or timeout expires
@@ -2411,7 +2499,11 @@ module.exports = class TranscriptGuiPlugin extends Plugin {
       }
     } while (Date.now() - startedAt < timeoutMs);
 
-    logStream.end();
+    try {
+      process.kill(child.pid, "SIGTERM");
+    } catch (_error) {
+      // ignore
+    }
     const recentLog = logBuffer.slice(-20).join("");
     throw new Error(`Backend konnte nicht rechtzeitig gestartet werden.\n\nLetzte Log-Einträge:\n${recentLog}\n\nVollständiges Log: ${logPath}`);
   }
