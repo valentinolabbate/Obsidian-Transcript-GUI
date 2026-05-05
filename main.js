@@ -22,7 +22,7 @@ const MEDIA_EXTENSIONS = new Set([...AUDIO_EXTENSIONS, ...VIDEO_EXTENSIONS]);
 
 const BACKEND_REPO_OWNER = "valentinolabbate";
 const BACKEND_REPO_NAME = "Obsidian-Transcript-Server";
-const BACKEND_VERSION = "0.2.8";
+const BACKEND_VERSION = "0.2.9";
 const BACKEND_DOWNLOAD_URL = `https://github.com/${BACKEND_REPO_OWNER}/${BACKEND_REPO_NAME}/archive/refs/tags/v${BACKEND_VERSION}.tar.gz`;
 
 const DEFAULT_SESSION_PROFILES = [
@@ -421,6 +421,10 @@ function getEnvPath(installDir) {
   return path.join(installDir, ".env");
 }
 
+function isTruthyEnv(value) {
+  return ["1", "true", "yes", "on"].includes(String(value || "").trim().toLowerCase());
+}
+
 function readBackendEnv(app) {
   const installDir = getBackendInstallDir(app);
   const envPath = getEnvPath(installDir);
@@ -432,6 +436,7 @@ function readBackendEnv(app) {
     LECTURE_PIPELINE_LM_STUDIO_BASE_URL: "http://127.0.0.1:1234/v1",
     LECTURE_PIPELINE_LM_STUDIO_MODEL: "qwen/qwen3.6-35b-a3b",
     LECTURE_PIPELINE_TRANSCRIPTION_MODEL: "mlx-community/whisper-large-v3-turbo",
+    LECTURE_PIPELINE_PARALLEL_AUDIO_ANALYSIS: "false",
     LECTURE_PIPELINE_CHUNK_TARGET_CHARS: "14000",
     LECTURE_PIPELINE_REQUEST_TIMEOUT_SECONDS: "1800",
     LECTURE_PIPELINE_IDLE_SHUTDOWN_SECONDS: "900",
@@ -465,6 +470,7 @@ function writeBackendEnv(installDir, vaultRoot, overrides = {}) {
     `LECTURE_PIPELINE_LM_STUDIO_BASE_URL=${overrides.lmStudioUrl || "http://127.0.0.1:1234/v1"}`,
     `LECTURE_PIPELINE_LM_STUDIO_MODEL=${overrides.lmStudioModel || "qwen/qwen3.6-35b-a3b"}`,
     `LECTURE_PIPELINE_TRANSCRIPTION_MODEL=${overrides.transcriptionModel || "mlx-community/whisper-large-v3-turbo"}`,
+    `LECTURE_PIPELINE_PARALLEL_AUDIO_ANALYSIS=${overrides.parallelAudioAnalysis || "false"}`,
     `LECTURE_PIPELINE_CHUNK_TARGET_CHARS=${overrides.chunkTargetChars || "14000"}`,
     `LECTURE_PIPELINE_REQUEST_TIMEOUT_SECONDS=${overrides.requestTimeoutSeconds || "1800"}`,
     `LECTURE_PIPELINE_IDLE_SHUTDOWN_SECONDS=${overrides.idleShutdownSeconds || "900"}`,
@@ -1354,6 +1360,7 @@ class TranscriptGuiSettingTab extends PluginSettingTab {
           lmStudioUrl: env.LECTURE_PIPELINE_LM_STUDIO_BASE_URL,
           lmStudioModel: env.LECTURE_PIPELINE_LM_STUDIO_MODEL,
           transcriptionModel: env.LECTURE_PIPELINE_TRANSCRIPTION_MODEL,
+          parallelAudioAnalysis: env.LECTURE_PIPELINE_PARALLEL_AUDIO_ANALYSIS,
           chunkTargetChars: env.LECTURE_PIPELINE_CHUNK_TARGET_CHARS,
           requestTimeoutSeconds: env.LECTURE_PIPELINE_REQUEST_TIMEOUT_SECONDS,
           idleShutdownSeconds: env.LECTURE_PIPELINE_IDLE_SHUTDOWN_SECONDS,
@@ -1399,6 +1406,17 @@ class TranscriptGuiSettingTab extends PluginSettingTab {
           text.setValue(env.LECTURE_PIPELINE_TRANSCRIPTION_MODEL || "");
           text.onChange((value) => {
             env.LECTURE_PIPELINE_TRANSCRIPTION_MODEL = value.trim();
+            saveEnv();
+          });
+        });
+
+      new Setting(containerEl)
+        .setName("Audio-Analyse parallelisieren")
+        .setDesc("Optional: Transkription und Speaker-Diarization laufen nach der Vorverarbeitung parallel. Deaktiviert lassen, wenn Speicher knapp ist.")
+        .addToggle((toggle) => {
+          toggle.setValue(isTruthyEnv(env.LECTURE_PIPELINE_PARALLEL_AUDIO_ANALYSIS));
+          toggle.onChange((value) => {
+            env.LECTURE_PIPELINE_PARALLEL_AUDIO_ANALYSIS = value ? "true" : "false";
             saveEnv();
           });
         });

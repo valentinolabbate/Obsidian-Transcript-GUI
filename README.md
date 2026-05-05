@@ -11,6 +11,7 @@ Obsidian-Plugin als GUI fuer die Lecture-Pipeline. Das Backend wird jetzt automa
 - Kurs aus aktuellem Vault-Kontext vorbelegen
 - letzten Lauf im Modal anzeigen
 - Backend wird automatisch im Plugin-Ordner installiert und gestartet
+- Backend-.env inklusive optionaler paralleler Audio-Analyse konfigurieren
 - erzeugte Sitzungsnotiz direkt in Obsidian oeffnen
 
 ## Installation
@@ -23,7 +24,7 @@ Obsidian-Plugin als GUI fuer die Lecture-Pipeline. Das Backend wird jetzt automa
 
 ## Backend
 
-Das Plugin spricht die lokale API des `obsidian-lecture-pipeline`-Backends an:
+Das Plugin spricht die lokale API des `Obsidian-Transcript-Server`-Backends an:
 
 - `GET /health`
 - `POST /process`
